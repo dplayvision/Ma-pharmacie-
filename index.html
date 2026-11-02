@@ -108,20 +108,23 @@ $("newMed").onclick=()=>{resetForm();setTab("add")};
 $("cancelEdit").onclick=()=>{resetForm();setTab("list")};
 $("search").addEventListener("input",render);
 $("loginBtn").onclick=async()=>{
-  $("loginBtn").disabled=true;
-  $("loginMsg").textContent="Redirection vers Google…";
+  const btn=$("loginBtn"), msg=$("loginMsg");
+  btn.disabled=true;
+  msg.textContent="Ouverture de la connexion Google…";
   try {
-    // Sur iPhone/iPad, la redirection est plus fiable que l'ouverture d'une fenêtre popup.
-    const isAppleMobile = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-    if (isAppleMobile) {
-      await signInWithRedirect(auth, provider);
-    } else {
-      await signInWithPopup(auth, provider);
-    }
+    // L'appel popup est effectué directement depuis le clic utilisateur.
+    await signInWithPopup(auth, provider);
+    msg.textContent="Connexion Google réussie…";
   } catch(e) {
-    $("loginBtn").disabled=false;
-    $("loginMsg").textContent="Connexion Google impossible : "+humanError(e);
-    console.error("Erreur connexion Google",e);
+    console.error("Firebase Auth:", e);
+    btn.disabled=false;
+    const messages = {
+      "auth/unauthorized-domain":"Domaine non autorisé dans Firebase Authentication.",
+      "auth/popup-blocked":"Safari a bloqué la fenêtre Google. Autorise les fenêtres surgissantes pour ce site.",
+      "auth/popup-closed-by-user":"La fenêtre Google a été fermée avant la connexion.",
+      "auth/operation-not-supported-in-this-environment":"Cette méthode de connexion n'est pas prise en charge dans ce navigateur."
+    };
+    msg.textContent="Erreur Google : "+(messages[e.code] || (e.code ? e.code+" — " : "")+e.message);
   }
 };
 $("logout").onclick=()=>signOut(auth);
@@ -154,7 +157,7 @@ getRedirectResult(auth).then(result=>{
   if(result && result.user) $("loginMsg").textContent="Connexion réussie.";
 }).catch(e=>{
   $("loginBtn").disabled=false;
-  $("loginMsg").textContent="Erreur après retour de Google : "+humanError(e);
+  $("loginMsg").textContent="Erreur Firebase au retour : "+(e.code||"")+" "+(e.message||"");
   console.error("Erreur retour Google",e);
 });
 </script>
