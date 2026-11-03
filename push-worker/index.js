@@ -3,6 +3,10 @@ const webpush = require("web-push");
 const crypto = require("node:crypto");
 
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || "{}");
+
+console.log("Compte utilisé :", serviceAccount.client_email);
+console.log("Projet utilisé :", serviceAccount.project_id);
+
 const vapidPublicKey = process.env.VAPID_PUBLIC_KEY;
 const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY;
 
