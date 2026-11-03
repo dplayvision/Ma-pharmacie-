@@ -26,8 +26,8 @@ label{font-size:13px;font-weight:650;display:block}.grid{display:grid;grid-templ
 <section id="login" class="card"><h2>Bienvenue</h2><p class="muted">Connectez-vous avec l'un des deux comptes Google autorisés.</p><button id="loginBtn" style="width:100%">Continuer avec Google</button><p id="loginMsg" class="muted"></p></section>
 <main id="app" class="hidden">
 <div class="row between"><div><b id="welcome">Pharmacie familiale</b><div class="muted" id="syncState">Connexion…</div></div><span class="pill">Partagée</span></div>
-<section class="card"><div class="row between"><div><b>Alertes sur ce téléphone</b><div id="pushState" class="muted">Contrôle lorsque l'application est ouverte</div></div><button id="enablePush">Autoriser</button></div>
-<p class="muted">Sur iPhone, ajoute d'abord Ma Pharmacie à l'écran d'accueil et ouvre son icône. Sans serveur payant, les alertes ne peuvent pas être envoyées lorsque l'application est complètement fermée.</p></section>
+<section class="card"><div class="row between"><div><b>Alertes sur ce téléphone</b><div id="pushState" class="muted">Notifications non activées</div></div><button id="enablePush">Autoriser</button></div>
+<p class="muted">Sur iPhone, ajoute d'abord Ma Pharmacie à l'écran d'accueil et ouvre son icône. Autorise les notifications pour recevoir les alertes même lorsque l'application est fermée. Le service GitHub vérifie les rappels périodiquement.</p></section>
 <div id="alerts"></div>
 <div class="stats"><div class="stat"><b id="countAll">0</b><span class="muted">Médicaments</span></div><div class="stat"><b id="countLow">0</b><span class="muted">Stocks faibles</span></div><div class="stat"><b id="countExpiry">0</b><span class="muted">À surveiller</span></div></div>
 <div class="tabs"><button class="active" data-tab="list">Ma pharmacie</button><button data-tab="add">Ajouter</button><button data-tab="reminders">Rappels</button></div>
@@ -58,6 +58,59 @@ provider.setCustomParameters({prompt:"select_account"});
 let user=null,meds=[],unsub=null,alertTimer=null;
 const $=id=>document.getElementById(id),medRef=()=>collection(db,"pharmacieFamiliale","inventaire","medicaments");
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const VAPID_PUBLIC_KEY = "BF_Jyt8GEB-JZx1ymwpQBAHJco8dGnJz1godnFlYcsaoVzY1LR7YKihIaiOS4PiLlmHsKST-wO0_ZhUizp62lRo";
+
+function urlBase64ToUint8Array(value) {
+  const padding = "=".repeat((4 - value.length % 4) % 4);
+  const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  return Uint8Array.from(raw, c => c.charCodeAt(0));
+}
+
+async function enableBackgroundPush() {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    throw new Error("Les notifications en arrière-plan ne sont pas prises en charge.");
+  }
+  if (!("Notification" in window)) {
+    throw new Error("Les notifications ne sont pas prises en charge.");
+  }
+  if (Notification.permission !== "granted") {
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") {
+      throw new Error("Autorisation des notifications refusée.");
+    }
+  }
+
+  const registration = await navigator.serviceWorker.register("./sw.js");
+  let subscription = await registration.pushManager.getSubscription();
+
+  if (!subscription) {
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+    });
+  }
+
+  let deviceId = localStorage.getItem("maPharmaciePushDeviceId");
+  if (!deviceId) {
+    deviceId = crypto.randomUUID();
+    localStorage.setItem("maPharmaciePushDeviceId", deviceId);
+  }
+
+  await setDoc(
+    doc(db, "pharmacieFamiliale", "inventaire", "notificationDevices", deviceId),
+    {
+      subscription: subscription.toJSON(),
+      ownerEmail: user.email,
+      deviceLabel: "Téléphone",
+      updatedAt: serverTimestamp()
+    },
+    { merge: true }
+  );
+
+  return registration;
+}
+
 function tab(t){["list","add","reminders"].forEach(x=>$("tab-"+x).classList.toggle("hidden",x!==t));document.querySelectorAll("[data-tab]").forEach(b=>b.classList.toggle("active",b.dataset.tab===t))}
 document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>tab(b.dataset.tab));
 $("newMed").onclick=()=>{reset();tab("add")};$("cancelEdit").onclick=()=>{reset();tab("list")};$("search").oninput=render;
@@ -84,7 +137,22 @@ if(m.reminderOn){const times=[m.reminderTime].filter(Boolean);if(m.reminderFreq=
 if(m.expiry){const n=daysUntil(m.expiry);if([30,7,1,0].includes(n)){const k=`peremption_${m.id}_${date}_${n}`;if(!wasShown(k)){displayAlert("Ma Pharmacie — péremption",n===0?`${m.name} arrive à péremption aujourd'hui.`:`${m.name} arrive à péremption dans ${n} jour(s).`);markShown(k)}}}
 if(+m.quantity<=+(m.threshold??0)){const k=`stock_${m.id}_${date}`;if(!wasShown(k)){displayAlert("Ma Pharmacie — stock faible",`Stock faible : ${m.name} (${+m.quantity||0} restant(s)).`);markShown(k)}}
 }}
-$("enablePush").onclick=async()=>{const b=$("enablePush");b.disabled=true;try{if(!("Notification"in window))throw Error("Notifications non prises en charge.");if(/iPhone|iPad|iPod/i.test(navigator.userAgent)&&!matchMedia("(display-mode: standalone)").matches&&!navigator.standalone)throw Error("Sur iPhone : Safari > Partager > Sur l'écran d'accueil. Ouvre ensuite l'icône Ma Pharmacie.");const p=await Notification.requestPermission();if(p!=="granted")throw Error("Autorisation refusée dans les réglages du téléphone.");$("pushState").textContent="Autorisation accordée. Contrôle lorsque l'application est ouverte.";b.textContent="Autorisé";checkAlerts()}catch(e){$("pushState").textContent=e.message;alert(e.message)}finally{b.disabled=false}};
+$("enablePush").onclick = async () => {
+  const button = $("enablePush");
+  button.disabled = true;
+  try {
+    await enableBackgroundPush();
+    $("pushState").textContent = "Notifications en arrière-plan activées sur cet appareil.";
+    button.textContent = "Activé";
+    checkAlerts();
+    alert("Les notifications sont activées sur cet appareil.");
+  } catch (error) {
+    $("pushState").textContent = error.message;
+    alert(error.message);
+  } finally {
+    button.disabled = false;
+  }
+};
 onAuthStateChanged(auth,u=>{if(unsub){unsub();unsub=null}if(alertTimer){clearInterval(alertTimer);alertTimer=null}if(!u){user=null;$("login").classList.remove("hidden");$("app").classList.add("hidden");$("logout").classList.add("hidden");return}if(!allowed.includes((u.email||"").toLowerCase())){signOut(auth);$("loginMsg").textContent="Compte non autorisé.";return}user=u;$("login").classList.add("hidden");$("app").classList.remove("hidden");$("logout").classList.remove("hidden");$("welcome").textContent="Bonjour "+(u.displayName||u.email);$("pushState").textContent=("Notification"in window&&Notification.permission==="granted")?"Autorisation accordée sur ce téléphone":"Autorisation non activée";
 unsub=onSnapshot(query(medRef(),orderBy("name")),s=>{meds=s.docs.map(d=>({id:d.id,...d.data()}));meds.forEach(cachePhoto);$("syncState").textContent="Synchronisé";render();checkAlerts()},e=>{$("syncState").textContent="Erreur Firebase : "+e.message;console.error(e)});alertTimer=setInterval(checkAlerts,30000)});
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)checkAlerts()});getRedirectResult(auth).catch(console.error);
