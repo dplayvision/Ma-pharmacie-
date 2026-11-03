@@ -111,10 +111,27 @@ async function main() {
   const today = `${p.year}-${p.month}-${p.day}`;
   const nowMinutes = Number(p.hour) * 60 + Number(p.minute);
 
-  const [medicineSnap, deviceSnap] = await Promise.all([
-    medicinesRef.get(),
-    devicesRef.get()
-  ]);
+  // Lectures séparées pour identifier précisément la collection refusée.
+  let medicineSnap;
+  let deviceSnap;
+
+  try {
+    console.log("Lecture de la collection medicaments...");
+    medicineSnap = await medicinesRef.get();
+    console.log("Medicaments OK :", medicineSnap.size);
+  } catch (error) {
+    console.error("ERREUR MEDICAMENTS :", error.code, error.message);
+    throw error;
+  }
+
+  try {
+    console.log("Lecture de la collection notificationDevices...");
+    deviceSnap = await devicesRef.get();
+    console.log("NotificationDevices OK :", deviceSnap.size);
+  } catch (error) {
+    console.error("ERREUR NOTIFICATIONDEVICES :", error.code, error.message);
+    throw error;
+  }
 
   const devices = deviceSnap.docs.map(d => ({
     id: d.id,
