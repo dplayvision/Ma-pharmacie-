@@ -1,0 +1,14 @@
+{
+  "name": "ma-pharmacie-push-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Envoi des notifications Ma Pharmacie",
+  "main": "index.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.0.2",
+    "web-push": "^3.6.7"
+  }
+}
