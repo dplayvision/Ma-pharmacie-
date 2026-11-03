@@ -1,165 +1,55 @@
 <!doctype html>
-<html lang="fr">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#16845b">
-<title>Ma Pharmacie</title>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#16845b"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="default"><meta name="apple-mobile-web-app-title" content="Ma Pharmacie"><link rel="manifest" href="./manifest.webmanifest"><link rel="apple-touch-icon" href="./icon-192.png"><title>Ma Pharmacie</title>
 <style>
-:root{--green:#16845b;--bg:#f4f7f5;--card:#fff;--ink:#1c2922;--muted:#68766e;--line:#e2eae5;--red:#c43d3d;--amber:#a56b00}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-header{background:var(--green);color:#fff;padding:22px 18px 18px}header h1{margin:0;font-size:25px}header p{margin:5px 0 0;opacity:.9;font-size:13px}
-main{max-width:760px;margin:auto;padding:16px 14px 90px}.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:15px;margin:12px 0;box-shadow:0 2px 10px #193d2910}
-.row{display:flex;gap:10px;align-items:center}.between{justify-content:space-between}.muted{color:var(--muted);font-size:13px}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.stat{background:#edf6f0;border-radius:12px;padding:12px}.stat b{display:block;font-size:23px;color:var(--green)}
-button{border:0;border-radius:11px;background:var(--green);color:#fff;padding:12px 15px;font-weight:650;font-size:14px;cursor:pointer}button.secondary{background:#e9f2ed;color:#176344}button.danger{background:#fff0f0;color:var(--red)}button:disabled{opacity:.5}
-input,select,textarea{width:100%;border:1px solid #d5e0d9;border-radius:10px;padding:12px;font:inherit;background:#fff;color:var(--ink);margin:5px 0 12px}
-label{font-size:13px;font-weight:650;display:block}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.full{grid-column:1/-1}
-.med{display:flex;gap:12px;align-items:center}.med img{width:62px;height:62px;object-fit:cover;border-radius:12px;background:#eef2ef}.med h3{font-size:16px;margin:0 0 4px}.pill{display:inline-block;padding:4px 8px;border-radius:30px;background:#edf6f0;color:#176344;font-size:11px;margin:2px}.pill.warn{background:#fff3dc;color:var(--amber)}.pill.bad{background:#ffeded;color:var(--red)}
-.hidden{display:none!important}.tabs{display:flex;gap:7px;overflow:auto;margin:12px 0}.tabs button{white-space:nowrap}.tabs button.active{background:#14543c}.notice{padding:11px;border-radius:10px;background:#fff5dc;color:#765000;font-size:13px}.empty{text-align:center;padding:24px;color:var(--muted)}
-#login{max-width:460px;margin:35px auto;padding:20px}.right{margin-left:auto}.small{font-size:12px}
-@media(max-width:480px){.grid{grid-template-columns:1fr 1fr}.stats{gap:6px}.stat{padding:9px}.stat b{font-size:20px}}
-</style>
-</head>
-<body>
+:root{--g:#16845b;--bg:#f4f7f5;--ink:#1c2922;--muted:#68766e;--line:#e2eae5}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}header{background:var(--g);color:white;padding:22px 18px}header h1{margin:0;font-size:25px}header p{margin:5px 0 0;font-size:13px}main{max-width:760px;margin:auto;padding:16px 14px 90px}.card{background:white;border:1px solid var(--line);border-radius:16px;padding:15px;margin:12px 0}.row{display:flex;gap:10px;align-items:center}.between{justify-content:space-between}.muted{color:var(--muted);font-size:13px}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.stat{background:#edf6f0;border-radius:12px;padding:12px}.stat b{display:block;font-size:23px;color:var(--g)}button{border:0;border-radius:11px;background:var(--g);color:white;padding:12px 15px;font-weight:650;font-size:14px}button.secondary{background:#e9f2ed;color:#176344}button.danger{background:#fff0f0;color:#c43d3d}button:disabled{opacity:.5}input,select,textarea{width:100%;border:1px solid #d5e0d9;border-radius:10px;padding:12px;font:inherit;background:white;margin:5px 0 12px}label{font-size:13px;font-weight:650;display:block}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.full{grid-column:1/-1}.med{display:flex;gap:12px;align-items:center}.med img{width:62px;height:62px;object-fit:cover;border-radius:12px}.med h3{font-size:16px;margin:0 0 4px}.pill{display:inline-block;padding:4px 8px;border-radius:30px;background:#edf6f0;color:#176344;font-size:11px;margin:2px}.warn{background:#fff3dc;color:#a56b00}.bad{background:#ffeded;color:#c43d3d}.hidden{display:none!important}.tabs{display:flex;gap:7px;overflow:auto;margin:12px 0}.tabs button{white-space:nowrap}.tabs button.active{background:#14543c}.notice{padding:11px;border-radius:10px;background:#fff5dc;color:#765000;font-size:13px}.empty{text-align:center;padding:24px;color:var(--muted)}#login{max-width:460px;margin:35px auto;padding:20px}@media(max-width:480px){.grid{grid-template-columns:1fr 1fr}.stat{padding:9px}.stat b{font-size:20px}}
+</style></head><body>
 <header><div class="row between"><div><h1>💊 Ma Pharmacie</h1><p>Votre pharmacie familiale, au même endroit</p></div><button id="logout" class="secondary hidden">Déconnexion</button></div></header>
-<section id="login" class="card">
-<h2>Bienvenue</h2><p class="muted">Connectez-vous avec l'un des deux comptes Google autorisés.</p>
-<button id="loginBtn" style="width:100%">Continuer avec Google</button>
-<p id="loginMsg" class="muted"></p>
-</section>
-<main id="app" class="hidden">
-<div class="row between"><div><b id="welcome">Pharmacie familiale</b><div class="muted" id="syncState">Connexion…</div></div><span class="pill">Partagée</span></div>
-<div class="stats">
-<div class="stat"><b id="countAll">0</b><span class="muted">Médicaments</span></div>
-<div class="stat"><b id="countLow">0</b><span class="muted">Stocks faibles</span></div>
-<div class="stat"><b id="countExpiry">0</b><span class="muted">À surveiller</span></div>
-</div>
-<div class="tabs">
-<button class="active" data-tab="list">Ma pharmacie</button><button data-tab="add">Ajouter</button><button data-tab="reminders">Rappels</button>
-</div>
-<section id="tab-list">
-<input id="search" placeholder="🔎 Rechercher un médicament…">
-<div class="row between"><b>Inventaire</b><button id="newMed" class="secondary">＋ Ajouter</button></div>
-<div id="medicineList"></div>
-</section>
-<section id="tab-add" class="hidden card">
-<h2 id="formTitle">Ajouter un médicament</h2>
-<form id="medForm">
-<input type="hidden" id="medId">
-<div class="grid">
+<section id="login" class="card"><h2>Bienvenue</h2><p class="muted">Connectez-vous avec l'un des deux comptes Google autorisés.</p><button id="loginBtn" style="width:100%">Continuer avec Google</button><p id="loginMsg" class="muted"></p></section>
+<main id="app" class="hidden"><div class="row between"><div><b id="welcome">Pharmacie familiale</b><div class="muted" id="syncState">Connexion…</div></div><span class="pill">Partagée</span></div>
+<section class="card"><div class="row between"><div><b>Notifications sur ce téléphone</b><div id="pushState" class="muted">Non configurées</div></div><button id="enablePush">Activer</button></div><p class="muted">Sur iPhone, ajoute d'abord Ma Pharmacie à l'écran d'accueil, puis ouvre son icône. Active les notifications sur les deux téléphones.</p></section>
+<div class="stats"><div class="stat"><b id="countAll">0</b><span class="muted">Médicaments</span></div><div class="stat"><b id="countLow">0</b><span class="muted">Stocks faibles</span></div><div class="stat"><b id="countExpiry">0</b><span class="muted">À surveiller</span></div></div>
+<div class="tabs"><button class="active" data-tab="list">Ma pharmacie</button><button data-tab="add">Ajouter</button><button data-tab="reminders">Rappels</button></div>
+<section id="tab-list"><input id="search" placeholder="🔎 Rechercher un médicament…"><div class="row between"><b>Inventaire</b><button id="newMed" class="secondary">＋ Ajouter</button></div><div id="medicineList"></div></section>
+<section id="tab-add" class="hidden card"><h2 id="formTitle">Ajouter un médicament</h2><form id="medForm"><input type="hidden" id="medId"><div class="grid">
 <div class="full"><label>Nom du médicament *</label><input id="name" required placeholder="Ex. Paracétamol"></div>
-<div><label>Dosage</label><input id="dose" placeholder="500 mg"></div>
-<div><label>Forme</label><select id="form"><option>Comprimés</option><option>Gélules</option><option>Sirop</option><option>Crème</option><option>Spray</option><option>Gouttes</option><option>Autre</option></select></div>
-<div><label>Quantité actuelle</label><input id="quantity" type="number" min="0" value="1"></div>
-<div><label>Seuil de stock faible</label><input id="threshold" type="number" min="0" value="3"></div>
-<div><label>Date de péremption</label><input id="expiry" type="date"></div>
-<div><label>Pour qui ?</label><select id="person"><option>Famille</option><option>Jérémy</option><option>Melissa</option><option>Enzo</option><option>Lena</option></select></div>
+<div><label>Dosage</label><input id="dose" placeholder="500 mg"></div><div><label>Forme</label><select id="form"><option>Comprimés</option><option>Gélules</option><option>Sirop</option><option>Crème</option><option>Spray</option><option>Gouttes</option><option>Autre</option></select></div>
+<div><label>Quantité actuelle</label><input id="quantity" type="number" min="0" value="1"></div><div><label>Seuil de stock faible</label><input id="threshold" type="number" min="0" value="3"></div>
+<div><label>Date de péremption</label><input id="expiry" type="date"></div><div><label>Pour qui ?</label><select id="person"><option>Famille</option><option>Jérémy</option><option>Melissa</option><option>Enzo</option><option>Lena</option></select></div>
 <div class="full"><label>Emplacement</label><input id="place" placeholder="Armoire salle de bain…"></div>
-<div class="full"><label>Code-barres (facultatif)</label><div class="row"><input id="barcode" placeholder="Code-barres" style="margin-bottom:12px"><button type="button" id="scanBtn" class="secondary">Scanner</button></div></div>
-<div class="full"><label>Photo de la boîte (facultatif, max. 500 Ko) · IndexedDB + synchronisation Firebase</label><input id="photo" type="file" accept="image/*" capture="environment"></div>
-<div class="full"><label><input id="reminderOn" type="checkbox" style="width:auto;margin-right:7px">Activer un rappel de prise (facultatif)</label></div>
-<div><label>Heure du rappel</label><input id="reminderTime" type="time" value="08:00"></div>
-<div><label>Fréquence</label><select id="reminderFreq"><option>Chaque jour</option><option>Matin et soir</option><option>Une fois par jour</option></select></div>
-<div class="full"><label>Notes</label><textarea id="notes" rows="2" placeholder="Informations utiles…"></textarea></div>
-</div>
-<p class="notice">Les photos sont copiées dans IndexedDB sur l'appareil et envoyées dans Firebase Storage pour être partagées avec l'autre compte. Cette application sert à inventorier les médicaments. Respectez toujours l'ordonnance et les conseils du pharmacien. Elle ne calcule pas les doses.</p>
-<div class="row"><button type="submit">Enregistrer</button><button type="button" id="cancelEdit" class="secondary">Annuler</button></div>
-</form>
-</section>
-<section id="tab-reminders" class="hidden card"><h2>Rappels facultatifs</h2><p class="muted">Seuls les médicaments pour lesquels un rappel a été activé apparaissent ici.</p><div id="reminderList"></div><p class="notice">Les rappels affichés dans l'application ne garantissent pas une notification lorsque le navigateur est fermé. Pour des alertes fiables sur iPhone, il faudra ajouter une solution de notifications dédiée.</p></section>
-</main>
+<div class="full"><label>Code-barres</label><div class="row"><input id="barcode" placeholder="Code-barres"><button type="button" id="scanBtn" class="secondary">Scanner</button></div></div>
+<div class="full"><label>Photo de la boîte (facultatif, max. 500 Ko)</label><input id="photo" type="file" accept="image/*" capture="environment"></div>
+<div class="full"><label><input id="reminderOn" type="checkbox" style="width:auto"> Activer un rappel de prise</label></div>
+<div><label>Heure du rappel</label><input id="reminderTime" type="time" value="08:00"></div><div><label>Fréquence</label><select id="reminderFreq"><option>Chaque jour</option><option>Matin et soir</option><option>Une fois par jour</option></select></div>
+<div id="eveningWrap" class="full hidden"><label>Deuxième heure (soir)</label><input id="reminderEveningTime" type="time" value="20:00"></div>
+<div class="full"><label>Notes</label><textarea id="notes" rows="2"></textarea></div></div><p class="notice">Respectez toujours l'ordonnance et les conseils du pharmacien. L'application ne calcule pas les doses.</p><div class="row"><button type="submit">Enregistrer</button><button type="button" id="cancelEdit" class="secondary">Annuler</button></div></form></section>
+<section id="tab-reminders" class="hidden card"><h2>Rappels facultatifs</h2><div id="reminderList"></div></section></main>
 <script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-import { getFirestore, collection, addDoc, doc, setDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, getBytes, deleteObject } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
-
-const firebaseConfig = {
-  apiKey: "AIzaSyD8FfX9uljCWJi1fg3hE5poocXOCAH-H9A",
-  authDomain: "mes-paiements-jeremy.firebaseapp.com",
-  projectId: "mes-paiements-jeremy",
-  storageBucket: "mes-paiements-jeremy.firebasestorage.app",
-  messagingSenderId: "1085958529684",
-  appId: "1:1085958529684:web:99e5514798cf0b8f098a81"
-};
-const allowedEmails = ["duchenejerem@gmail.com","melissasemiglazoff@gmail.com"];
-const appFirebase = initializeApp(firebaseConfig);
-const auth = getAuth(appFirebase);
-const db = getFirestore(appFirebase);
-const storage = getStorage(appFirebase);
-const provider = new GoogleAuthProvider();
-provider.setCustomParameters({prompt:"select_account"});
-let currentUser=null, medicines=[], unsubscribe=null;
-const $ = id => document.getElementById(id);
-const esc = s => String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const medsRef = () => collection(db,"pharmacieFamiliale","inventaire","medicaments");
-
-// Photos : copie locale IndexedDB + copie partagée Firebase Storage.
-const PHOTO_DB = "MaPharmaciePhotosDB";
-function openPhotoDB(){return new Promise((resolve,reject)=>{const req=indexedDB.open(PHOTO_DB,1);req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains("photos"))req.result.createObjectStore("photos")};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});}
-async function saveLocalPhoto(id,blob){const d=await openPhotoDB();return new Promise((resolve,reject)=>{const tx=d.transaction("photos","readwrite");tx.objectStore("photos").put(blob,id);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});}
-async function getLocalPhoto(id){const d=await openPhotoDB();return new Promise((resolve,reject)=>{const r=d.transaction("photos").objectStore("photos").get(id);r.onsuccess=()=>resolve(r.result||null);r.onerror=()=>reject(r.error);});}
-async function deleteLocalPhoto(id){const d=await openPhotoDB();return new Promise((resolve,reject)=>{const tx=d.transaction("photos","readwrite");tx.objectStore("photos").delete(id);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});}
-async function uploadSharedPhoto(id,file){const path=`pharmacieFamiliale/${id}/photo`;const r=storageRef(storage,path);await uploadBytes(r,file,{contentType:file.type||"image/jpeg"});const url=await getDownloadURL(r);await saveLocalPhoto(id,file);return {photoUrl:url,photoPath:path};}
-async function cacheSharedPhoto(m){if(!m.photoPath)return;try{const existing=await getLocalPhoto(m.id);if(existing)return;const blob=await getBytes(storageRef(storage,m.photoPath));await saveLocalPhoto(m.id,new Blob([blob]));}catch(err){console.warn("Cache photo local indisponible",err);}}
-function setTab(tab){["list","add","reminders"].forEach(t=>$("tab-"+t).classList.toggle("hidden",t!==tab));document.querySelectorAll("[data-tab]").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));}
-document.querySelectorAll("[data-tab]").forEach(b=>b.addEventListener("click",()=>setTab(b.dataset.tab)));
-$("newMed").onclick=()=>{resetForm();setTab("add")};
-$("cancelEdit").onclick=()=>{resetForm();setTab("list")};
-$("search").addEventListener("input",render);
-$("loginBtn").onclick=async()=>{
-  const btn=$("loginBtn"), msg=$("loginMsg");
-  btn.disabled=true;
-  msg.textContent="Ouverture de la connexion Google…";
-  try {
-    // L'appel popup est effectué directement depuis le clic utilisateur.
-    await signInWithPopup(auth, provider);
-    msg.textContent="Connexion Google réussie…";
-  } catch(e) {
-    console.error("Firebase Auth:", e);
-    btn.disabled=false;
-    const messages = {
-      "auth/unauthorized-domain":"Domaine non autorisé dans Firebase Authentication.",
-      "auth/popup-blocked":"Safari a bloqué la fenêtre Google. Autorise les fenêtres surgissantes pour ce site.",
-      "auth/popup-closed-by-user":"La fenêtre Google a été fermée avant la connexion.",
-      "auth/operation-not-supported-in-this-environment":"Cette méthode de connexion n'est pas prise en charge dans ce navigateur."
-    };
-    msg.textContent="Erreur Google : "+(messages[e.code] || (e.code ? e.code+" — " : "")+e.message);
-  }
-};
+import{initializeApp}from"https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import{getAuth,GoogleAuthProvider,signInWithPopup,getRedirectResult,onAuthStateChanged,signOut}from"https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import{getFirestore,collection,doc,setDoc,deleteDoc,onSnapshot,serverTimestamp,query,orderBy}from"https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import{getStorage,ref as storageRef,uploadBytes,getDownloadURL,getBytes,deleteObject}from"https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
+import{getMessaging,getToken,onMessage,isSupported}from"https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging.js";
+const config={apiKey:"AIzaSyD8FfX9uljCWJi1fg3hE5poocXOCAH-H9A",authDomain:"mes-paiements-jeremy.firebaseapp.com",projectId:"mes-paiements-jeremy",storageBucket:"mes-paiements-jeremy.firebasestorage.app",messagingSenderId:"1085958529684",appId:"1:1085958529684:web:99e5514798cf0b8f098a81"};
+const VAPID="BJ5VKPg-YudAQtH_LbRhrhwoIYIQNZ1UzI-lb6bYtLFC94Wnv3br4fQWGACO8WUadFWudO5jW5Z8OnI5GYtsf0s",allowed=["duchenejerem@gmail.com","melissasemiglazoff@gmail.com"];
+const fb=initializeApp(config),auth=getAuth(fb),db=getFirestore(fb),storage=getStorage(fb),provider=new GoogleAuthProvider();provider.setCustomParameters({prompt:"select_account"});
+let user=null,meds=[],unsub=null,msg=null;const $=id=>document.getElementById(id),medRef=()=>collection(db,"pharmacieFamiliale","inventaire","medicaments"),deviceRef=()=>collection(db,"pharmacieFamiliale","inventaire","notificationDevices");
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function tab(t){["list","add","reminders"].forEach(x=>$("tab-"+x).classList.toggle("hidden",x!==t));document.querySelectorAll("[data-tab]").forEach(b=>b.classList.toggle("active",b.dataset.tab===t))}
+document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>tab(b.dataset.tab));$("newMed").onclick=()=>{reset();tab("add")};$("cancelEdit").onclick=()=>{reset();tab("list")};$("search").oninput=render;$("reminderFreq").onchange=()=>$("eveningWrap").classList.toggle("hidden",$("reminderFreq").value!=="Matin et soir");
+$("loginBtn").onclick=async()=>{try{$("loginBtn").disabled=true;await signInWithPopup(auth,provider)}catch(e){$("loginBtn").disabled=false;$("loginMsg").textContent=(e.code||"")+" "+e.message}};
 $("logout").onclick=()=>signOut(auth);
-function humanError(e){return e.code==="auth/unauthorized-domain"?"Domaine non autorisé dans Firebase Authentication.":e.code==="auth/popup-closed-by-user"?"Connexion annulée.":(e.message||"Une erreur est survenue.");}
-function resetForm(){$("medForm").reset();$("medId").value="";$("quantity").value=1;$("threshold").value=3;$("formTitle").textContent="Ajouter un médicament";}
-async function imageData(file){if(!file)return "";const data=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file)});if(String(data).length>680000)throw new Error("Photo trop volumineuse. Choisissez une image de moins de 500 Ko.");return data;}
-$("medForm").onsubmit=async e=>{e.preventDefault();if(!currentUser)return;try{
-const id=$("medId").value||doc(medsRef()).id, old=medicines.find(m=>m.id===id), file=$("photo").files[0];
-let photoInfo={photoUrl:old?.photoUrl||"",photoPath:old?.photoPath||""};
-if(file){if(file.size>500*1024)throw new Error("Photo trop volumineuse. Choisissez une image de moins de 500 Ko.");photoInfo=await uploadSharedPhoto(id,file);}
-const data={name:$("name").value.trim(),dose:$("dose").value.trim(),form:$("form").value,quantity:Number($("quantity").value||0),threshold:Number($("threshold").value||0),expiry:$("expiry").value,person:$("person").value,place:$("place").value.trim(),barcode:$("barcode").value.trim(),...photoInfo,reminderOn:$("reminderOn").checked,reminderTime:$("reminderTime").value,reminderFreq:$("reminderFreq").value,notes:$("notes").value.trim(),updatedAt:serverTimestamp(),updatedBy:currentUser.email};
-await setDoc(doc(db,"pharmacieFamiliale","inventaire","medicaments",id),old?data:{...data,createdAt:serverTimestamp(),createdBy:currentUser.email});
-resetForm();setTab("list");$("syncState").textContent="Synchronisé";}catch(err){alert("Enregistrement impossible : "+(err.message||"Vérifiez Firebase Storage et ses règles."));}};
-function editMed(id){const m=medicines.find(x=>x.id===id);if(!m)return;setTab("add");$("formTitle").textContent="Modifier le médicament";$("medId").value=id;["name","dose","form","quantity","threshold","expiry","person","place","barcode","reminderTime","reminderFreq","notes"].forEach(k=>$(k).value=m[k]??"");$("reminderOn").checked=!!m.reminderOn;}
-async function removeMed(id){if(confirm("Supprimer ce médicament de la pharmacie familiale ?")){const m=medicines.find(x=>x.id===id);await deleteDoc(doc(db,"pharmacieFamiliale","inventaire","medicaments",id));await deleteLocalPhoto(id).catch(()=>{});if(m?.photoPath)await deleteObject(storageRef(storage,m.photoPath)).catch(()=>{});}}
-function expiryStatus(date){if(!date)return "";const days=(new Date(date+"T00:00:00")-new Date(new Date().toDateString()))/86400000;if(days<0)return '<span class="pill bad">Périmé</span>';if(days<=30)return '<span class="pill warn">Expire bientôt</span>';return "";}
-function render(){const q=$("search").value.toLowerCase();const shown=medicines.filter(m=>(m.name+" "+m.dose+" "+m.person+" "+m.barcode).toLowerCase().includes(q));
-$("countAll").textContent=medicines.length;$("countLow").textContent=medicines.filter(m=>Number(m.quantity)<=Number(m.threshold)).length;$("countExpiry").textContent=medicines.filter(m=>m.expiry&&new Date(m.expiry+"T23:59:59")<new Date(Date.now()+30*86400000)).length;
-$("medicineList").innerHTML=shown.length?shown.map(m=>`<article class="card med">${m.photoUrl?`<img src="${esc(m.photoUrl)}" alt="Photo de ${esc(m.name)}">`:'<div class="medIcon">💊</div>'}<div style="min-width:0;flex:1"><h3>${esc(m.name)}</h3><div class="muted">${esc(m.dose)} · ${esc(m.form)} · ${esc(m.person)}</div><div><span class="pill">Stock : ${Number(m.quantity)||0}</span>${Number(m.quantity)<=Number(m.threshold)?'<span class="pill warn">Stock faible</span>':''}${expiryStatus(m.expiry)}${m.reminderOn?'<span class="pill">Rappel activé</span>':''}</div><div class="muted">${m.expiry?"Péremption : "+esc(m.expiry):""} ${m.place?"· "+esc(m.place):""}</div><div class="row" style="margin-top:8px"><button class="secondary" data-edit="${m.id}">Modifier</button><button class="danger" data-del="${m.id}">Supprimer</button></div></div></article>`).join(""):'<div class="empty">Aucun médicament enregistré.<br>Appuyez sur « Ajouter » pour commencer.</div>';
-document.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>editMed(b.dataset.edit));document.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>removeMed(b.dataset.del));
-const reminders=medicines.filter(m=>m.reminderOn);$("reminderList").innerHTML=reminders.length?reminders.map(m=>`<div class="card"><b>${esc(m.name)}</b><div class="muted">${esc(m.person)} · ${esc(m.reminderTime||"Heure non définie")} · ${esc(m.reminderFreq||"")}</div></div>`).join(""):`<div class="empty">Aucun rappel activé. Vous pouvez en activer un dans la fiche d'un médicament.</div>`;
-}
-$("scanBtn").onclick=async()=>{if(!("BarcodeDetector"in window)){alert("Le scan direct n'est pas disponible dans ce navigateur. Vous pouvez saisir le code-barres manuellement.");return;}try{const detector=new BarcodeDetector({formats:["ean_13","ean_8","upc_a","upc_e","code_128"]});const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});const video=document.createElement("video");video.srcObject=stream;await video.play();const overlay=document.createElement("div");overlay.style="position:fixed;inset:0;background:#000e;z-index:99;display:grid;place-items:center;color:white;padding:20px";overlay.innerHTML='<div><p>Placez le code-barres devant la caméra</p><video autoplay playsinline style="width:100%;max-width:360px"></video><button id="closeScan">Fermer</button></div>';document.body.append(overlay);const v=overlay.querySelector("video");v.srcObject=stream;const close=()=>{stream.getTracks().forEach(t=>t.stop());overlay.remove()};overlay.querySelector("#closeScan").onclick=close;const scan=async()=>{if(!overlay.isConnected)return;try{const codes=await detector.detect(v);if(codes.length){$("barcode").value=codes[0].rawValue;close();return;}}catch{}requestAnimationFrame(scan)};scan();}catch(e){alert("Impossible d'ouvrir la caméra : "+e.message)}};
-onAuthStateChanged(auth,user=>{if(unsubscribe){unsubscribe();unsubscribe=null;}if(!user){currentUser=null;$("login").classList.remove("hidden");$("app").classList.add("hidden");$("logout").classList.add("hidden");return;}
-if(!allowedEmails.includes((user.email||"").toLowerCase())){signOut(auth);$("loginMsg").textContent="Ce compte Google n'est pas autorisé pour cette pharmacie.";return;}
-currentUser=user;$("login").classList.add("hidden");$("app").classList.remove("hidden");$("logout").classList.remove("hidden");$("welcome").textContent="Bonjour "+(user.displayName||user.email);$("syncState").textContent="Synchronisation Firebase…";
-unsubscribe=onSnapshot(query(medsRef(),orderBy("name")),snap=>{medicines=snap.docs.map(d=>({id:d.id,...d.data()}));medicines.forEach(cacheSharedPhoto);$("syncState").textContent="Synchronisé · "+new Date().toLocaleTimeString("fr-BE",{hour:"2-digit",minute:"2-digit"});render();},err=>{$("syncState").textContent="Erreur de synchronisation";console.error(err);alert("Firestore : "+err.message);});
-});
-getRedirectResult(auth).then(result=>{
-  if(result && result.user) $("loginMsg").textContent="Connexion réussie.";
-}).catch(e=>{
-  $("loginBtn").disabled=false;
-  $("loginMsg").textContent="Erreur Firebase au retour : "+(e.code||"")+" "+(e.message||"");
-  console.error("Erreur retour Google",e);
-});
-</script>
-</body>
-</html>
+function reset(){$("medForm").reset();$("medId").value="";$("quantity").value=1;$("threshold").value=3;$("reminderTime").value="08:00";$("reminderEveningTime").value="20:00";$("formTitle").textContent="Ajouter un médicament";$("eveningWrap").classList.toggle("hidden",$("reminderFreq").value!=="Matin et soir")}
+async function localPhoto(id,blob){const r=indexedDB.open("MaPharmaciePhotosDB",1);const d=await new Promise((a,b)=>{r.onupgradeneeded=()=>r.result.createObjectStore("photos");r.onsuccess=()=>a(r.result);r.onerror=()=>b(r.error)});return new Promise((a,b)=>{const t=d.transaction("photos","readwrite");t.objectStore("photos").put(blob,id);t.oncomplete=a;t.onerror=()=>b(t.error)})}
+async function cachePhoto(m){if(!m.photoPath)return;try{const r=indexedDB.open("MaPharmaciePhotosDB",1),d=await new Promise((a,b)=>{r.onupgradeneeded=()=>r.result.createObjectStore("photos");r.onsuccess=()=>a(r.result);r.onerror=()=>b(r.error)}),exists=await new Promise((a,b)=>{const q=d.transaction("photos").objectStore("photos").get(m.id);q.onsuccess=()=>a(q.result);q.onerror=()=>b(q.error)});if(!exists){const bytes=await getBytes(storageRef(storage,m.photoPath));await localPhoto(m.id,new Blob([bytes]))}}catch(e){console.warn(e)}}
+$("medForm").onsubmit=async e=>{e.preventDefault();if(!user)return;try{const id=$("medId").value||doc(medRef()).id,old=meds.find(x=>x.id===id),file=$("photo").files[0];let photoUrl=old?.photoUrl||"",photoPath=old?.photoPath||"";if(file){if(file.size>512000)throw Error("Photo maximum : 500 Ko.");photoPath=`pharmacieFamiliale/${id}/photo`;const r=storageRef(storage,photoPath);await uploadBytes(r,file,{contentType:file.type||"image/jpeg"});photoUrl=await getDownloadURL(r);await localPhoto(id,file)}
+const data={name:$("name").value.trim(),dose:$("dose").value.trim(),form:$("form").value,quantity:+$("quantity").value,threshold:+$("threshold").value,expiry:$("expiry").value,person:$("person").value,place:$("place").value.trim(),barcode:$("barcode").value.trim(),photoUrl,photoPath,reminderOn:$("reminderOn").checked,reminderTime:$("reminderTime").value,reminderEveningTime:$("reminderEveningTime").value,reminderFreq:$("reminderFreq").value,notes:$("notes").value.trim(),updatedAt:serverTimestamp(),updatedBy:user.email};await setDoc(doc(db,"pharmacieFamiliale","inventaire","medicaments",id),old?data:{...data,createdAt:serverTimestamp(),createdBy:user.email});reset();tab("list")}catch(e){alert("Enregistrement impossible : "+e.message)}};
+function edit(id){const m=meds.find(x=>x.id===id);if(!m)return;tab("add");$("formTitle").textContent="Modifier le médicament";$("medId").value=id;["name","dose","form","quantity","threshold","expiry","person","place","barcode","reminderTime","reminderEveningTime","reminderFreq","notes"].forEach(k=>$(k).value=m[k]??"");$("reminderOn").checked=!!m.reminderOn;$("eveningWrap").classList.toggle("hidden",m.reminderFreq!=="Matin et soir")}
+async function remove(id){if(!confirm("Supprimer ce médicament ?"))return;const m=meds.find(x=>x.id===id);await deleteDoc(doc(db,"pharmacieFamiliale","inventaire","medicaments",id));if(m?.photoPath)await deleteObject(storageRef(storage,m.photoPath)).catch(()=>{})}
+function render(){const q=$("search").value.toLowerCase(),shown=meds.filter(m=>(m.name+" "+m.dose+" "+m.person+" "+m.barcode).toLowerCase().includes(q));$("countAll").textContent=meds.length;$("countLow").textContent=meds.filter(m=>+m.quantity<=+m.threshold).length;$("countExpiry").textContent=meds.filter(m=>m.expiry&&new Date(m.expiry+"T23:59:59")<new Date(Date.now()+30*864e5)).length;
+$("medicineList").innerHTML=shown.length?shown.map(m=>`<article class="card med">${m.photoUrl?`<img src="${esc(m.photoUrl)}">`:"💊"}<div style="min-width:0;flex:1"><h3>${esc(m.name)}</h3><div class="muted">${esc(m.dose)} · ${esc(m.form)} · ${esc(m.person)}</div><span class="pill">Stock : ${+m.quantity||0}</span>${+m.quantity<=+m.threshold?'<span class="pill warn">Stock faible</span>':""}${m.expiry?`<span class="pill">Péremption : ${esc(m.expiry)}</span>`:""}<div class="row"><button class="secondary" data-edit="${m.id}">Modifier</button><button class="danger" data-del="${m.id}">Supprimer</button></div></div></article>`).join(""):'<div class="empty">Aucun médicament enregistré.</div>';document.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>edit(b.dataset.edit));document.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>remove(b.dataset.del));const r=meds.filter(m=>m.reminderOn);$("reminderList").innerHTML=r.length?r.map(m=>`<div class="card"><b>${esc(m.name)}</b><div class="muted">${esc(m.person)} · ${esc(m.reminderTime)}${m.reminderFreq==="Matin et soir"?" et "+esc(m.reminderEveningTime||"20:00"):""}</div></div>`).join(""):'<div class="empty">Aucun rappel activé.</div>'}
+async function activatePush(){const b=$("enablePush");b.disabled=true;try{if(!("Notification"in window)||!("serviceWorker"in navigator))throw Error("Notifications non prises en charge.");if(/iPhone|iPad|iPod/i.test(navigator.userAgent)&&!matchMedia("(display-mode: standalone)").matches&&!navigator.standalone)throw Error("Sur iPhone : Safari > Partager > Sur l'écran d'accueil. Ouvre ensuite l'icône Ma Pharmacie.");if(!(await isSupported()))throw Error("Firebase Messaging non pris en charge sur ce navigateur.");if(await Notification.requestPermission()!=="granted")throw Error("Autorisation de notification refusée dans iOS.");msg=getMessaging(fb);const reg=await navigator.serviceWorker.register("./firebase-messaging-sw.js");await navigator.serviceWorker.ready;const token=await getToken(msg,{vapidKey:VAPID,serviceWorkerRegistration:reg});if(!token)throw Error("Aucun jeton Firebase reçu.");const hash=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(token)),id=Array.from(new Uint8Array(hash)).map(x=>x.toString(16).padStart(2,"0")).join("").slice(0,32);await setDoc(doc(deviceRef(),id),{token,ownerEmail:user.email,deviceLabel:/iPhone|iPad|iPod/i.test(navigator.userAgent)?"iPhone":"Navigateur",updatedAt:serverTimestamp()},{merge:true});$("pushState").textContent="Notifications activées sur cet appareil.";b.textContent="Activées";alert("Ce téléphone est inscrit. Répète l'opération sur le deuxième téléphone.");onMessage(msg,p=>alert((p.notification?.title||"Ma Pharmacie")+"\n"+(p.notification?.body||"Rappel")))}catch(e){$("pushState").textContent=e.message;alert(e.message);console.error(e)}finally{b.disabled=false}}
+$("enablePush").onclick=activatePush;
+onAuthStateChanged(auth,u=>{if(unsub){unsub();unsub=null}if(!u){user=null;$("login").classList.remove("hidden");$("app").classList.add("hidden");$("logout").classList.add("hidden");return}if(!allowed.includes((u.email||"").toLowerCase())){signOut(auth);$("loginMsg").textContent="Compte non autorisé.";return}user=u;$("login").classList.add("hidden");$("app").classList.remove("hidden");$("logout").classList.remove("hidden");$("welcome").textContent="Bonjour "+(u.displayName||u.email);$("pushState").textContent=Notification.permission==="granted"?"Autorisation accordée sur ce téléphone":"Notifications non activées";unsub=onSnapshot(query(medRef(),orderBy("name")),s=>{meds=s.docs.map(d=>({id:d.id,...d.data()}));meds.forEach(cachePhoto);$("syncState").textContent="Synchronisé";render()},e=>{$("syncState").textContent="Erreur Firebase : "+e.message;console.error(e)})});
+getRedirectResult(auth).catch(console.error);
+$("scanBtn").onclick=async()=>{if(!("BarcodeDetector"in window)){alert("Scan non disponible ici. Saisis le code manuellement.");return}try{const detector=new BarcodeDetector({formats:["ean_13","ean_8","upc_a","upc_e","code_128"]}),stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}}),v=document.createElement("video");v.srcObject=stream;v.playsInline=true;await v.play();const loop=async()=>{try{const codes=await detector.detect(v);if(codes.length){$("barcode").value=codes[0].rawValue;stream.getTracks().forEach(t=>t.stop());return}}catch{}requestAnimationFrame(loop)};loop()}catch(e){alert(e.message)}};
+</script></body></html>
