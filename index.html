@@ -58,7 +58,7 @@ provider.setCustomParameters({prompt:"select_account"});
 let user=null,meds=[],unsub=null,alertTimer=null;
 const $=id=>document.getElementById(id),medRef=()=>collection(db,"pharmacieFamiliale","inventaire","medicaments");
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const VAPID_PUBLIC_KEY = "BF_Jyt8GEB-JZx1ymwpQBAHJco8dGnJz1godnFlYcsaoVzY1LR7YKihIaiOS4PiLlmHsKST-wO0_ZhUizp62lRo";
+const VAPID_PUBLIC_KEY = "BFk960EH-XLaWEPWfZqMKvCsR9vqSn1FyWpdndK3tk_myPAHHZ9GNiE3xT9dVEBz2HAWHb9VkrO6dI007hFsNNM";
 
 function urlBase64ToUint8Array(value) {
   const padding = "=".repeat((4 - value.length % 4) % 4);
@@ -77,7 +77,6 @@ async function enableBackgroundPush() {
   if (!user || !user.email) {
     throw new Error("Connectez-vous avant d'activer les notifications.");
   }
-
   if (Notification.permission !== "granted") {
     const permission = await Notification.requestPermission();
     if (permission !== "granted") {
@@ -87,21 +86,16 @@ async function enableBackgroundPush() {
 
   const registration = await navigator.serviceWorker.register("./sw.js");
   await navigator.serviceWorker.ready;
-
   const applicationServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
   let subscription = await registration.pushManager.getSubscription();
 
-  // Une inscription existante peut être liée à une ancienne clé VAPID.
-  // Dans ce cas, on la renouvelle avec la clé publique actuellement utilisée.
+  // Renouvelle l'abonnement si le téléphone utilisait l'ancienne clé publique.
   if (subscription) {
     const oldKey = subscription.options && subscription.options.applicationServerKey;
-    const oldBytes = oldKey
-      ? new Uint8Array(oldKey instanceof ArrayBuffer ? oldKey : oldKey.buffer)
-      : null;
+    const oldBytes = oldKey ? new Uint8Array(oldKey) : null;
     const sameKey = oldBytes &&
       oldBytes.length === applicationServerKey.length &&
       oldBytes.every((value, index) => value === applicationServerKey[index]);
-
     if (!sameKey) {
       await subscription.unsubscribe();
       subscription = null;
@@ -117,14 +111,13 @@ async function enableBackgroundPush() {
 
   let deviceId = localStorage.getItem("maPharmaciePushDeviceId");
   if (!deviceId) {
-    deviceId = (crypto.randomUUID
+    deviceId = crypto.randomUUID
       ? crypto.randomUUID()
-      : "device-" + Date.now() + "-" + Math.random().toString(16).slice(2));
+      : "device-" + Date.now() + "-" + Math.random().toString(16).slice(2);
     localStorage.setItem("maPharmaciePushDeviceId", deviceId);
   }
 
   const subscriptionData = subscription.toJSON();
-
   await setDoc(
     doc(db, "pharmacieFamiliale", "inventaire", "notificationDevices", deviceId),
     {
