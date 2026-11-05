@@ -153,7 +153,10 @@ async function main() {
     for (const event of events) {
       for (const device of devices) {
         const subscription = device.subscription || { endpoint: device.endpoint, keys: device.keys };
-        if (!subscription.endpoint || !subscription.keys) continue;
+        if (!subscription.endpoint || !subscription.keys?.p256dh || !subscription.keys?.auth) {
+          console.warn("Abonnement incomplet pour le téléphone :", device.id);
+          continue;
+        }
 
         const logId = makeId(`${device.id}|${medicine.id}|${event.key}`);
         const logRef = logsRef.doc(logId);
