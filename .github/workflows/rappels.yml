@@ -1,28 +1,35 @@
 name: Rappels Ma Pharmacie
+
 on:
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
+
 permissions:
   contents: read
+
 jobs:
   send-push:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+
     steps:
       - name: Récupérer le dépôt
         uses: actions/checkout@v4
+
       - name: Installer Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+
       - name: Installer les dépendances
         working-directory: push-worker
         run: npm install --omit=dev
+
       - name: Envoyer les notifications
         working-directory: push-worker
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
-          VAPID_PUBLIC_KEY: "BF_Jyt8GEB-JZx1ymwpQBAHJco8dGnJz1godnFlYcsaoVzY1LR7YKihIaiOS4PiLlmHsKST-wO0_ZhUizp62lRo"
+          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
         run: node index.js
