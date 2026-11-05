@@ -7,8 +7,14 @@ const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || "{}");
 console.log("Compte utilisé :", serviceAccount.client_email);
 console.log("Projet utilisé :", serviceAccount.project_id);
 
-const vapidPublicKey = process.env.VAPID_PUBLIC_KEY;
-const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY;
+const vapidPublicKey = (process.env.VAPID_PUBLIC_KEY || "").trim();
+const vapidPrivateKey = (process.env.VAPID_PRIVATE_KEY || "").trim();
+
+console.log("Clé publique présente :", vapidPublicKey.length > 0);
+console.log("Longueur clé publique :", vapidPublicKey.length);
+console.log("Clé privée présente :", vapidPrivateKey.length > 0);
+console.log("Longueur clé privée :", vapidPrivateKey.length);
+console.log("Format privé valide :", /^[A-Za-z0-9_-]{43}$/.test(vapidPrivateKey));
 
 if (!serviceAccount.project_id || !vapidPublicKey || !vapidPrivateKey) {
   throw new Error("Secrets Firebase ou VAPID manquants.");
@@ -115,7 +121,6 @@ async function main() {
   const today = `${p.year}-${p.month}-${p.day}`;
   const nowMinutes = Number(p.hour) * 60 + Number(p.minute);
 
-  // Lectures séparées pour identifier précisément la collection refusée.
   let medicineSnap;
   let deviceSnap;
 
