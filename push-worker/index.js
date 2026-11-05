@@ -15,21 +15,16 @@ console.log("Clé privée présente :", vapidPrivateKey.length > 0);
 console.log("Longueur clé privée :", vapidPrivateKey.length);
 console.log("Format privé valide :", /^[A-Za-z0-9_-]{43}$/.test(vapidPrivateKey));
 
-// Vérifie la paire VAPID avec ECDH P-256. N'affiche jamais les clés.
+// Vérification de la paire VAPID P-256, sans afficher les clés.
 try {
   const ecdh = crypto.createECDH("prime256v1");
   const privateBytes = Buffer.from(vapidPrivateKey, "base64url");
-  if (privateBytes.length !== 32) {
-    throw new Error("La clé privée décodée ne fait pas 32 octets.");
-  }
+  if (privateBytes.length !== 32) throw new Error("La clé privée décodée ne fait pas 32 octets.");
   ecdh.setPrivateKey(privateBytes);
   const derivedPublicKey = ecdh.getPublicKey(undefined, "uncompressed").toString("base64url");
-  console.log(
-    "Clé publique et privée correspondantes :",
-    derivedPublicKey === vapidPublicKey
-  );
-} catch (keyCheckError) {
-  console.log("Vérification de paire impossible :", keyCheckError.message);
+  console.log("Clé publique et privée correspondantes :", derivedPublicKey === vapidPublicKey);
+} catch (error) {
+  console.log("Vérification de paire impossible :", error.message);
 }
 
 if (!serviceAccount.project_id || !vapidPublicKey || !vapidPrivateKey) {
@@ -38,7 +33,6 @@ if (!serviceAccount.project_id || !vapidPublicKey || !vapidPrivateKey) {
 
 admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 const db = admin.firestore();
-
 webpush.setVapidDetails("mailto:duchenejerem@gmail.com", vapidPublicKey, vapidPrivateKey);
 
 const base = db.collection("pharmacieFamiliale").doc("inventaire");
@@ -48,14 +42,15 @@ const logsRef = base.collection("notificationLog");
 
 function brusselsParts() {
   const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/Brussels", year: "numeric", month: "2-digit",
-    day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23"
+    timeZone: "Europe/Brussels",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23"
   }).formatToParts(new Date());
   return Object.fromEntries(parts.map(p => [p.type, p.value]));
 }
 
 function daysUntil(dateString, today) {
-  if (!dateString || !/^\d{4}-\d{2}-\d{2}$/.test(dateString)) return null;
+  if (!dateString || !/^\\d{4}-\\d{2}-\\d{2}$/.test(dateString)) return null;
   const [y, m, d] = dateString.split("-").map(Number);
   const [ty, tm, td] = today.split("-").map(Number);
   return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(ty, tm - 1, td)) / 86400000);
@@ -110,9 +105,10 @@ function errorDetails(error) {
     catch { body = String(body || ""); }
   }
   return {
+    code: error && error.code,
     status: error && error.statusCode,
     message: error && error.message,
-    body: body || "(aucun détail fourni par le serveur push)"
+    body: body || "(aucun détail fourni)"
   };
 }
 
@@ -127,7 +123,7 @@ async function main() {
     medicineSnap = await medicinesRef.get();
     console.log("Medicaments OK :", medicineSnap.size);
   } catch (error) {
-    console.error("ERREUR MEDICAMENTS :", error.code, error.message);
+    console.error("ERREUR FIRESTORE - lecture medicaments :", JSON.stringify(errorDetails(error)));
     throw error;
   }
 
@@ -136,7 +132,7 @@ async function main() {
     deviceSnap = await devicesRef.get();
     console.log("NotificationDevices OK :", deviceSnap.size);
   } catch (error) {
-    console.error("ERREUR NOTIFICATIONDEVICES :", error.code, error.message);
+    console.error("ERREUR FIRESTORE - lecture notificationDevices :", JSON.stringify(errorDetails(error)));
     throw error;
   }
 
@@ -146,10 +142,12 @@ async function main() {
     return;
   }
 
-  let sent = 0, skipped = 0;
+  let pushSent = 0, logsSaved = 0, skipped = 0, pushErrors = 0, firestoreErrors = 0;
+
   for (const medicineDoc of medicineSnap.docs) {
     const medicine = { id: medicineDoc.id, ...medicineDoc.data() };
     const events = eventsForMedicine(medicine, today, nowMinutes);
+
     for (const event of events) {
       for (const device of devices) {
         const subscription = device.subscription || { endpoint: device.endpoint, keys: device.keys };
@@ -160,37 +158,80 @@ async function main() {
 
         const logId = makeId(`${device.id}|${medicine.id}|${event.key}`);
         const logRef = logsRef.doc(logId);
-        const previous = await logRef.get();
+
+        // Sans lecture du journal, on n'envoie pas : impossible de contrôler les doublons.
+        let previous;
+        try {
+          previous = await logRef.get();
+        } catch (error) {
+          firestoreErrors++;
+          console.error("ERREUR FIRESTORE - lecture notificationLog (envoi ignoré) :", JSON.stringify({
+            deviceId: device.id, medicineId: medicine.id, eventKey: event.key, ...errorDetails(error)
+          }));
+          continue;
+        }
+
         if (previous.exists) {
           skipped++;
           continue;
         }
 
+        // Envoi Push isolé des opérations Firestore.
         try {
           await webpush.sendNotification(subscription, JSON.stringify({
             title: event.title, body: event.body, url: "./"
           }));
+          pushSent++;
+          console.log("PUSH ENVOYÉ :", { deviceId: device.id, medicineId: medicine.id, eventKey: event.key });
+        } catch (error) {
+          pushErrors++;
+          console.error("ERREUR PUSH - envoi impossible :", JSON.stringify({
+            deviceId: device.id, medicineId: medicine.id, eventKey: event.key, ...errorDetails(error)
+          }));
+
+          if (error.statusCode === 404 || error.statusCode === 410) {
+            try {
+              await devicesRef.doc(device.id).delete();
+              console.log("Abonnement expiré supprimé :", device.id);
+            } catch (deleteError) {
+              firestoreErrors++;
+              console.error("ERREUR FIRESTORE - suppression abonnement expiré :", JSON.stringify({
+                deviceId: device.id, ...errorDetails(deleteError)
+              }));
+            }
+          }
+          continue;
+        }
+
+        // Le Push est envoyé ; on enregistre ensuite le journal dans un bloc séparé.
+        try {
           await logRef.set({
             medicineId: medicine.id,
             deviceId: device.id,
             eventKey: event.key,
             sentAt: admin.firestore.FieldValue.serverTimestamp()
           });
-          sent++;
+          logsSaved++;
         } catch (error) {
-          console.error("ERREUR PUSH DETAILLEE :", JSON.stringify(errorDetails(error)));
-          if (error.statusCode === 404 || error.statusCode === 410) {
-            await devicesRef.doc(device.id).delete().catch(() => {});
-          }
+          firestoreErrors++;
+          console.error("ERREUR FIRESTORE - écriture notificationLog après envoi Push :", JSON.stringify({
+            deviceId: device.id, medicineId: medicine.id, eventKey: event.key, ...errorDetails(error)
+          }));
+          console.error("ATTENTION : Push envoyé mais journal non enregistré ; un doublon est possible au prochain passage.");
         }
       }
     }
   }
-  console.log(`Notifications envoyées : ${sent}`);
-  console.log(`Déjà envoyées : ${skipped}`);
+
+  console.log("BILAN FINAL");
+  console.log("Notifications Push envoyées :", pushSent);
+  console.log("Journaux Firestore enregistrés :", logsSaved);
+  console.log("Notifications déjà enregistrées :", skipped);
+  console.log("Erreurs Push :", pushErrors);
+  console.log("Erreurs Firestore :", firestoreErrors);
 }
 
 main().catch(error => {
-  console.error(error);
+  console.error("ERREUR FATALE DU WORKER :", errorDetails(error));
   process.exitCode = 1;
 });
