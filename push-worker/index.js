@@ -15,27 +15,15 @@ console.log("Clé privée présente :", vapidPrivateKey.length > 0);
 console.log("Longueur clé privée :", vapidPrivateKey.length);
 console.log("Format privé valide :", /^[A-Za-z0-9_-]{43}$/.test(vapidPrivateKey));
 
-// Vérifie que la clé publique configurée correspond réellement à la clé privée.
-// N'affiche jamais la clé privée ni le jeton JWT.
+// Vérifie la paire VAPID avec ECDH P-256. N'affiche jamais les clés.
 try {
-  const privateJwk = {
-    kty: "EC",
-    crv: "P-256",
-    d: vapidPrivateKey
-  };
-  const privateObject = crypto.createPrivateKey({
-    key: privateJwk,
-    format: "jwk"
-  });
-  const publicJwk = crypto.createPublicKey(privateObject).export({
-    format: "jwk"
-  });
-  const derivedPublicKey = Buffer.concat([
-    Buffer.from([4]),
-    Buffer.from(publicJwk.x, "base64url"),
-    Buffer.from(publicJwk.y, "base64url")
-  ]).toString("base64url");
-
+  const ecdh = crypto.createECDH("prime256v1");
+  const privateBytes = Buffer.from(vapidPrivateKey, "base64url");
+  if (privateBytes.length !== 32) {
+    throw new Error("La clé privée décodée ne fait pas 32 octets.");
+  }
+  ecdh.setPrivateKey(privateBytes);
+  const derivedPublicKey = ecdh.getPublicKey(undefined, "uncompressed").toString("base64url");
   console.log(
     "Clé publique et privée correspondantes :",
     derivedPublicKey === vapidPublicKey
@@ -67,7 +55,7 @@ function brusselsParts() {
 }
 
 function daysUntil(dateString, today) {
-  if (!dateString || !/^\\d{4}-\\d{2}-\\d{2}$/.test(dateString)) return null;
+  if (!dateString || !/^\d{4}-\d{2}-\d{2}$/.test(dateString)) return null;
   const [y, m, d] = dateString.split("-").map(Number);
   const [ty, tm, td] = today.split("-").map(Number);
   return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(ty, tm - 1, td)) / 86400000);
