@@ -15,6 +15,35 @@ console.log("Clé privée présente :", vapidPrivateKey.length > 0);
 console.log("Longueur clé privée :", vapidPrivateKey.length);
 console.log("Format privé valide :", /^[A-Za-z0-9_-]{43}$/.test(vapidPrivateKey));
 
+// Vérifie que la clé publique configurée correspond réellement à la clé privée.
+// N'affiche jamais la clé privée ni le jeton JWT.
+try {
+  const privateJwk = {
+    kty: "EC",
+    crv: "P-256",
+    d: vapidPrivateKey
+  };
+  const privateObject = crypto.createPrivateKey({
+    key: privateJwk,
+    format: "jwk"
+  });
+  const publicJwk = crypto.createPublicKey(privateObject).export({
+    format: "jwk"
+  });
+  const derivedPublicKey = Buffer.concat([
+    Buffer.from([4]),
+    Buffer.from(publicJwk.x, "base64url"),
+    Buffer.from(publicJwk.y, "base64url")
+  ]).toString("base64url");
+
+  console.log(
+    "Clé publique et privée correspondantes :",
+    derivedPublicKey === vapidPublicKey
+  );
+} catch (keyCheckError) {
+  console.log("Vérification de paire impossible :", keyCheckError.message);
+}
+
 if (!serviceAccount.project_id || !vapidPublicKey || !vapidPrivateKey) {
   throw new Error("Secrets Firebase ou VAPID manquants.");
 }
