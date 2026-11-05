@@ -58,7 +58,7 @@ provider.setCustomParameters({prompt:"select_account"});
 let user=null,meds=[],unsub=null,alertTimer=null;
 const $=id=>document.getElementById(id),medRef=()=>collection(db,"pharmacieFamiliale","inventaire","medicaments");
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const VAPID_PUBLIC_KEY = "BFk96QEH-XLaWEPWfZqMKvCsR9vqSn1FyWpdndK3tk_myPAHHZ9GNiE3xT9dVEBz2HAWHb9Vkr06dI007hFsNNM";
+const VAPID_PUBLIC_KEY = "BB8YMNRUh76tt4bH9hIFNLEIcz6D2LcrHflPco55bnQg6kW0JFuF_Jfs9tTAZITerkbP3SA4YPb78xCyvN04tpw";
 
 function urlBase64ToUint8Array(value) {
   const padding = "=".repeat((4 - value.length % 4) % 4);
