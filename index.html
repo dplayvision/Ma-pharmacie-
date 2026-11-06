@@ -1,4 +1,4 @@
-!doctype html>
+<!doctype html>
 <html lang="fr"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#16845b"><meta name="apple-mobile-web-app-capable" content="yes">
@@ -52,13 +52,13 @@ import{initializeApp}from"https://www.gstatic.com/firebasejs/10.14.1/firebase-ap
 import{getAuth,GoogleAuthProvider,signInWithPopup,getRedirectResult,onAuthStateChanged,signOut}from"https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import{getFirestore,collection,doc,setDoc,deleteDoc,onSnapshot,serverTimestamp,query,orderBy}from"https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import{getStorage,ref as storageRef,uploadBytes,getDownloadURL,getBytes,deleteObject}from"https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
-const config={apiKey:"AIzaSyD8FfX9uljCWJi1fg3hE5poocXOCA-H9A",authDomain:"mes-paiements-jeremy.firebaseapp.com",projectId:"mes-paiements-jeremy",storageBucket:"mes-paiements-jeremy.firebasestorage.app",messagingSenderId:"1085958529684",appId:"1:1085958529684:web:99e5514798cf0b8f098a81"};
+const config={apiKey:"AIzaSyD8FfX9uljCWJi1fg3hE5poocXOCAH-H9A",authDomain:"mes-paiements-jeremy.firebaseapp.com",projectId:"mes-paiements-jeremy",storageBucket:"mes-paiements-jeremy.firebasestorage.app",messagingSenderId:"1085958529684",appId:"1:1085958529684:web:99e5514798cf0b8f098a81"};
 const allowed=["duchenejerem@gmail.com","melissasemiglazoff@gmail.com"],fb=initializeApp(config),auth=getAuth(fb),db=getFirestore(fb),storage=getStorage(fb),provider=new GoogleAuthProvider();
 provider.setCustomParameters({prompt:"select_account"});
 let user=null,meds=[],unsub=null,alertTimer=null;
 const $=id=>document.getElementById(id),medRef=()=>collection(db,"pharmacieFamiliale","inventaire","medicaments");
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const VAPID_PUBLIC_KEY = "BFk96QEH-XLaWEPWfZqMKvCsR9vqSn1FyWpdndK3tk_myPAHHZ9GNiE3xT9dVEBz2HAWHb9Vkr06dIOO7hFsNNM";
+const VAPID_PUBLIC_KEY = "BMQ7DS179Ihr1d2OZmKAM0Rh4V_zTAR2k625PlvRuTB7XPhgN-8K6ZJcaFAlKmHHXlQdCgNZcHZuCSuhNUS0vqY";
 
 function urlBase64ToUint8Array(value) {
   const padding = "=".repeat((4 - value.length % 4) % 4);
@@ -189,3 +189,4 @@ unsub=onSnapshot(query(medRef(),orderBy("name")),s=>{meds=s.docs.map(d=>({id:d.i
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)checkAlerts()});getRedirectResult(auth).catch(console.error);
 $("scanBtn").onclick=async()=>{if(!("BarcodeDetector"in window)){alert("Scan non disponible ici. Saisis le code manuellement.");return}try{const detector=new BarcodeDetector({formats:["ean_13","ean_8","upc_a","upc_e","code_128"]}),stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}}),v=document.createElement("video");v.srcObject=stream;v.playsInline=true;await v.play();const loop=async()=>{try{const codes=await detector.detect(v);if(codes.length){$("barcode").value=codes[0].rawValue;stream.getTracks().forEach(t=>t.stop());return}}catch{}requestAnimationFrame(loop)};loop()}catch(e){alert(e.message)}};
 </script></body></html>
+Change la et redonne en txt
