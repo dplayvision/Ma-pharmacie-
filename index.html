@@ -189,4 +189,3 @@ unsub=onSnapshot(query(medRef(),orderBy("name")),s=>{meds=s.docs.map(d=>({id:d.i
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)checkAlerts()});getRedirectResult(auth).catch(console.error);
 $("scanBtn").onclick=async()=>{if(!("BarcodeDetector"in window)){alert("Scan non disponible ici. Saisis le code manuellement.");return}try{const detector=new BarcodeDetector({formats:["ean_13","ean_8","upc_a","upc_e","code_128"]}),stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}}),v=document.createElement("video");v.srcObject=stream;v.playsInline=true;await v.play();const loop=async()=>{try{const codes=await detector.detect(v);if(codes.length){$("barcode").value=codes[0].rawValue;stream.getTracks().forEach(t=>t.stop());return}}catch{}requestAnimationFrame(loop)};loop()}catch(e){alert(e.message)}};
 </script></body></html>
-Change la et redonne en txt
