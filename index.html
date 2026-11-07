@@ -46,7 +46,7 @@ label{font-size:13px;font-weight:650;display:block}.grid{display:grid;grid-templ
 <div class="full"><label>Notes</label><textarea id="notes" rows="2"></textarea></div></div>
 <p class="notice">Respectez toujours l'ordonnance et les conseils du pharmacien. L'application ne calcule pas les doses.</p>
 <div class="row"><button type="submit">Enregistrer</button><button type="button" id="cancelEdit" class="secondary">Annuler</button></div></form></section>
-<section id="tab-reminders" class="hidden card"><h2>Rappels facultatifs</h2><div id="reminderList"></div></section></main>
+<section id="tab-reminders" class="hidden card"><h2>Calendrier iPhone</h2><p class="muted">Un seul raccourci iPhone synchronisera les rappels de prise et de stock : il supprimera les anciens événements Ma Pharmacie puis recréera ceux qui sont encore nécessaires.</p><button type="button" id="syncCalendar">Synchroniser le calendrier</button><p id="calendarStatus" class="muted">Le raccourci iPhone « Synchroniser Ma Pharmacie » doit être créé une seule fois.</p><div id="reminderList"></div></section></main>
 <script type="module">
 import{initializeApp}from"https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import{getAuth,GoogleAuthProvider,signInWithPopup,getRedirectResult,onAuthStateChanged,signOut}from"https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
@@ -158,7 +158,28 @@ function edit(id){const m=meds.find(x=>x.id===id);if(!m)return;tab("add");$("for
 async function remove(id){if(!confirm("Supprimer ce médicament ?"))return;const m=meds.find(x=>x.id===id);await deleteDoc(doc(db,"pharmacieFamiliale","inventaire","medicaments",id));if(m?.photoPath)await deleteObject(storageRef(storage,m.photoPath)).catch(()=>{})}
 function render(){const q=$("search").value.toLowerCase(),shown=meds.filter(m=>(m.name+" "+m.dose+" "+m.person+" "+m.barcode).toLowerCase().includes(q));$("countAll").textContent=meds.length;$("countLow").textContent=meds.filter(m=>+m.quantity<=+m.threshold).length;$("countExpiry").textContent=meds.filter(m=>m.expiry&&daysUntil(m.expiry)<=30).length;
 $("medicineList").innerHTML=shown.length?shown.map(m=>`<article class="card med">${m.photoUrl?`<img src="${esc(m.photoUrl)}">`:"💊"}<div style="min-width:0;flex:1"><h3>${esc(m.name)}</h3><div class="muted">${esc(m.dose)} · ${esc(m.form)} · ${esc(m.person)}</div><span class="pill">Stock : ${+m.quantity||0}</span>${+m.quantity<=+m.threshold?'<span class="pill warn">Stock faible</span>':""}${m.expiry?`<span class="pill">Péremption : ${esc(m.expiry)}</span>`:""}<div class="row"><button class="secondary" data-edit="${m.id}">Modifier</button><button class="danger" data-del="${m.id}">Supprimer</button></div></div></article>`).join(""):'<div class="empty">Aucun médicament enregistré.</div>';
-document.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>edit(b.dataset.edit));document.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>remove(b.dataset.del));const r=meds.filter(m=>m.reminderOn);$("reminderList").innerHTML=r.length?r.map(m=>`<div class="card"><b>${esc(m.name)}</b><div class="muted">${esc(m.person)} · ${esc(m.reminderTime)}${m.reminderFreq==="Matin et soir"?" et "+esc(m.reminderEveningTime||"20:00"):""}</div></div>`).join(""):'<div class="empty">Aucun rappel activé.</div>'}
+document.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>edit(b.dataset.edit));document.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>remove(b.dataset.del));const r=meds.filter(m=>m.reminderOn || (+m.quantity<=+(m.threshold??0)));$("reminderList").innerHTML=r.length?r.map(m=>`<div class="card"><b>${esc(m.name)}</b><div class="muted">${m.reminderOn?`Prise : ${esc(m.reminderTime||"Non définie")}${m.reminderFreq==="Matin et soir"?" et "+esc(m.reminderEveningTime||"20:00"):""}`:"Pas de rappel de prise"} · ${+m.quantity<=+(m.threshold??0)?"Stock faible":"Stock suffisant"}</div></div>`).join(""):'<div class="empty">Aucun rappel de prise actif et aucun stock sous le seuil.</div>'}
+function calendarSyncPayload(){
+ const events=[];
+ for(const m of meds){
+  const label=`${m.name||"Médicament"}${m.dose?" · "+m.dose:""} — ${m.person||"Famille"}`;
+  if(m.reminderOn){
+   const times=[m.reminderTime].filter(Boolean);
+   if(m.reminderFreq==="Matin et soir")times.push(m.reminderEveningTime||"20:00");
+   times.forEach((time,index)=>events.push({uid:`MP-${m.id}-PRISE-${index}`,kind:"prise",title:`Prise : ${label} [MP-${m.id}-PRISE-${index}]`,time,repeatDaily:true,notes:`Rappel de prise Ma Pharmacie. ${label}`}));
+  }
+  if(+m.quantity<=+(m.threshold??0))events.push({uid:`MP-${m.id}-STOCK`,kind:"stock",title:`Vérifier le stock : ${m.name||"Médicament"} [MP-${m.id}-STOCK]`,time:"09:00",repeatDaily:true,notes:`Stock actuel : ${+m.quantity||0} ; seuil : ${+m.threshold||0}. Vérifier le réapprovisionnement.`});
+ }
+ return {app:"Ma Pharmacie",version:1,action:"replace_all_managed_events",events};
+}
+$("syncCalendar").onclick=()=>{
+ if(!user){$("calendarStatus").textContent="Connecte-toi d'abord à Ma Pharmacie.";return;}
+ const shortcutName="Synchroniser Ma Pharmacie";
+ const payload=JSON.stringify(calendarSyncPayload());
+ const url=`shortcuts://run-shortcut?name=${encodeURIComponent(shortcutName)}&input=text&text=${encodeURIComponent(payload)}`;
+ $("calendarStatus").textContent=`Transmission de ${calendarSyncPayload().events.length} rappel(s) au raccourci iPhone…`;
+ window.location.href=url;
+};
 function dateParts(){return Object.fromEntries(new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Brussels",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(new Date()).map(x=>[x.type,x.value]))}
 function daysUntil(date){if(!date)return null;const[y,m,d]=date.split("-").map(Number),p=dateParts();return Math.round((Date.UTC(y,m-1,d)-Date.UTC(+p.year,+p.month-1,+p.day))/86400000)}
 function wasShown(k){return localStorage.getItem("maPharmacieAlert_"+k)==="1"}function markShown(k){localStorage.setItem("maPharmacieAlert_"+k,"1")}
