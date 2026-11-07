@@ -178,7 +178,7 @@
      const label=`${m.name||"Médicament"}${m.dose?" · "+m.dose:""} — ${m.person||"Famille"}`;
      const params=new URLSearchParams({
       action:"TEMPLATE",
-      text:`💊 Prise : ${label}${index===1?" (soir)":""}`,
+      text:`Rappel : ${m.name||"Médicament"}${index===1?" (soir)":""}`,
       dates:`${fmt(startDate)}/${fmt(endDate)}`,
       details:`Rappel de prise préparé depuis Ma Pharmacie.\nMédicament : ${m.name||""}\nDosage : ${m.dose||"Non précisé"}\nPour : ${m.person||"Famille"}`,
       recur,
