@@ -1,4 +1,4 @@
- <!doctype html>
+<!doctype html>
     <html lang="fr"><head>
     <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
     <meta name="theme-color" content="#16845b"><meta name="apple-mobile-web-app-capable" content="yes">
@@ -55,6 +55,10 @@
     <div class="full"><label>Notes</label><textarea id="notes" rows="2"></textarea></div></div>
     <p class="notice">Respectez toujours l'ordonnance et les conseils du pharmacien. Les quantités du matin, midi et soir servent à estimer la consommation et la date de rupture. Respectez toujours les doses prescrites.</p>
     <div class="row"><button type="submit">Enregistrer</button><button type="button" id="cancelEdit" class="secondary">Annuler</button></div></form></section>
+    <section id="medDetails" class="card hidden" aria-live="polite">
+      <div class="row between"><h2 id="detailTitle">Fiche médicament</h2><button type="button" id="closeDetails" class="secondary">Fermer</button></div>
+      <div id="detailContent"></div>
+    </section>
     <section id="tab-reminders" class="hidden card"><h2>Rappels de médicaments</h2><p class="muted">Chaque rappel peut être préparé dans Google Agenda. Google Agenda s'ouvrira avec les informations déjà remplies : il ne restera qu'à vérifier et à enregistrer.</p><div id="reminderList"></div></section></main>
     <script type="module">
     import{initializeApp}from"https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
@@ -229,6 +233,21 @@
       urls.forEach(url=>window.open(url,"_blank"));
     };
 
+    function showMedicationDetails(id){
+      const m=meds.find(x=>x.id===id);
+      if(!m){alert("Ce médicament n'a pas été retrouvé.");return;}
+      tab("list");
+      const stock=currentStock(m),rupture=depletionInfo(m);
+      $("detailTitle").textContent=m.name||"Fiche médicament";
+      $("detailContent").innerHTML=`<div class="med" style="align-items:flex-start">${m.photoUrl?`<img src="${esc(m.photoUrl)}" alt="Boîte de ${esc(m.name)}" style="width:100px;height:100px">`:'<div style="font-size:42px">💊</div>'}<div><b>${esc(m.name)}</b><div class="muted">${esc(m.dose||"Dosage non précisé")} · ${esc(m.form||"")}</div><div class="muted">Pour : ${esc(m.person||"Famille")}</div></div></div><p><b>Stock restant :</b> ${stock}</p><p><b>Consommation :</b> ${dailyUse(m)} unité(s)/jour</p>${rupture?`<p><b>Rupture estimée :</b> dans ${rupture.days} jour(s), le ${rupture.date}</p>`:""}${m.expiry?`<p><b>Péremption :</b> ${esc(m.expiry)}</p>`:""}${m.place?`<p><b>Emplacement :</b> ${esc(m.place)}</p>`:""}${m.notes?`<p><b>Notes :</b> ${esc(m.notes)}</p>`:""}<div class="row"><button type="button" class="secondary" id="detailEdit">Modifier</button></div>`;
+      $("medDetails").classList.remove("hidden");
+      $("detailEdit").onclick=()=>{ $("medDetails").classList.add("hidden"); edit(id); };
+      $("medDetails").scrollIntoView({behavior:"smooth",block:"start"});
+      const url=new URL(location.href);url.searchParams.delete("openMed");history.replaceState({},"",url.pathname+url.search+url.hash);
+    }
+    $("closeDetails").onclick=()=>$("medDetails").classList.add("hidden");
+    function openMedicationFromLink(){const id=new URL(location.href).searchParams.get("openMed");if(id)showMedicationDetails(id);}
+
     function render(){
      const q=$("search").value.toLowerCase(),shown=meds.filter(m=>(m.name+" "+m.dose+" "+m.person+" "+m.barcode).toLowerCase().includes(q));
      $("countAll").textContent=meds.length;$("countLow").textContent=meds.filter(m=>currentStock(m)<=+m.threshold).length;$("countExpiry").textContent=meds.filter(m=>m.expiry&&daysUntil(m.expiry)<=30).length;
@@ -252,19 +271,26 @@
     function dateParts(){return Object.fromEntries(new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Brussels",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(new Date()).map(x=>[x.type,x.value]))}
     function daysUntil(date){if(!date)return null;const[y,m,d]=date.split("-").map(Number),p=dateParts();return Math.round((Date.UTC(y,m-1,d)-Date.UTC(+p.year,+p.month-1,+p.day))/86400000)}
     function wasShown(k){return localStorage.getItem("maPharmacieAlert_"+k)==="1"}function markShown(k){localStorage.setItem("maPharmacieAlert_"+k,"1")}
-    function displayAlert(title,body){const item=document.createElement("div");item.className="alertItem";item.innerHTML=`<b>${esc(title)}</b><div>${esc(body)}</div>`;$("alerts").prepend(item);while($("alerts").children.length>8)$("alerts").lastElementChild.remove();if("Notification"in window&&Notification.permission==="granted"){try{new Notification(title,{body,icon:"./icon-192.png"})}catch(e){console.warn(e)}}}
+    function displayAlert(title,body,medicationId){
+      const item=document.createElement("button");item.type="button";item.className="alertItem";item.style.cssText="display:block;width:100%;text-align:left;border:0;cursor:pointer";item.innerHTML=`<b>${esc(title)}</b><div>${esc(body)}</div><div style="margin-top:5px;text-decoration:underline">Ouvrir la fiche du médicament</div>`;
+      item.onclick=()=>showMedicationDetails(medicationId);$("alerts").prepend(item);
+      while($("alerts").children.length>8)$("alerts").lastElementChild.remove();
+      if("Notification"in window&&Notification.permission==="granted"){
+        try{const n=new Notification(title,{body,icon:"./icon-192.png",data:{medicationId}});n.onclick=()=>{const target=new URL("./",location.href);target.searchParams.set("openMed",medicationId);window.focus();location.href=target.toString();n.close();};}catch(e){console.warn(e)}
+      }
+    }
     function checkAlerts(){if(!user||!meds.length)return;const p=dateParts(),date=`${p.year}-${p.month}-${p.day}`,clock=`${p.hour}:${p.minute}`;for(const m of meds){
-    if(m.reminderOn&&(!m.reminderStartDate||date>=m.reminderStartDate)&&(!m.reminderEndDate||date<=m.reminderEndDate)){const times=[m.reminderTime].filter(Boolean);if(m.reminderFreq==="Matin et soir")times.push(m.reminderEveningTime||"20:00");const k=`prise_${m.id}_${date}_${clock}`;if(times.includes(clock)&&!wasShown(k)){displayAlert("Ma Pharmacie — rappel de prise",`${m.name||"Médicament"}${m.dose?" · "+m.dose:""} — ${m.person||"Famille"}`);markShown(k)}}
-    if(m.expiry){const n=daysUntil(m.expiry);if([30,7,1,0].includes(n)){const k=`peremption_${m.id}_${date}_${n}`;if(!wasShown(k)){displayAlert("Ma Pharmacie — péremption",n===0?`${m.name} arrive à péremption aujourd'hui.`:`${m.name} arrive à péremption dans ${n} jour(s).`);markShown(k)}}}
+    if(m.reminderOn&&(!m.reminderStartDate||date>=m.reminderStartDate)&&(!m.reminderEndDate||date<=m.reminderEndDate)){const times=[m.reminderTime].filter(Boolean);if(m.reminderFreq==="Matin et soir")times.push(m.reminderEveningTime||"20:00");const k=`prise_${m.id}_${date}_${clock}`;if(times.includes(clock)&&!wasShown(k)){displayAlert("Ma Pharmacie — rappel de prise",`${m.name||"Médicament"}${m.dose?" · "+m.dose:""} — ${m.person||"Famille"}`,m.id);markShown(k)}}
+    if(m.expiry){const n=daysUntil(m.expiry);if([30,7,1,0].includes(n)){const k=`peremption_${m.id}_${date}_${n}`;if(!wasShown(k)){displayAlert("Ma Pharmacie — péremption",n===0?`${m.name} arrive à péremption aujourd'hui.`:`${m.name} arrive à péremption dans ${n} jour(s).`,m.id);markShown(k)}}}
     const rupture=depletionInfo(m);
     if(rupture && rupture.days<=14 && rupture.days>=0){
       const k=`rupture_${m.id}_${rupture.dateISO}`;
       if(!wasShown(k)){
-        displayAlert("Ma Pharmacie — renouvellement à prévoir",`${m.name} (${m.person||"Famille"}) : rupture estimée dans ${rupture.days} jour(s), le ${rupture.date}. Pensez à renouveler le stock.`);
+        displayAlert("Ma Pharmacie — renouvellement à prévoir",`${m.name} (${m.person||"Famille"}) : rupture estimée dans ${rupture.days} jour(s), le ${rupture.date}. Pensez à renouveler le stock.`,m.id);
         markShown(k);
       }
     }
-    if(currentStock(m)<=+(m.threshold??0)){const k=`stock_${m.id}_${date}`;if(!wasShown(k)){displayAlert("Ma Pharmacie — stock faible",`Stock faible : ${m.name} (${currentStock(m)} restant(s)).`);markShown(k)}}
+    if(currentStock(m)<=+(m.threshold??0)){const k=`stock_${m.id}_${date}`;if(!wasShown(k)){displayAlert("Ma Pharmacie — stock faible",`Stock faible : ${m.name} (${currentStock(m)} restant(s)).`,m.id);markShown(k)}}
     }}
     $("enablePush").onclick = async () => {
       const button = $("enablePush");
@@ -283,7 +309,7 @@
       }
     };
     onAuthStateChanged(auth,u=>{if(unsub){unsub();unsub=null}if(alertTimer){clearInterval(alertTimer);alertTimer=null}if(!u){user=null;$("login").classList.remove("hidden");$("app").classList.add("hidden");$("logout").classList.add("hidden");return}if(!allowed.includes((u.email||"").toLowerCase())){signOut(auth);$("loginMsg").textContent="Compte non autorisé.";return}user=u;$("login").classList.add("hidden");$("app").classList.remove("hidden");$("logout").classList.remove("hidden");$("welcome").textContent="Bonjour "+(u.displayName||u.email);$("pushState").textContent=("Notification"in window&&Notification.permission==="granted")?"Autorisation accordée sur ce téléphone":"Autorisation non activée";
-    unsub=onSnapshot(query(medRef(),orderBy("name")),s=>{meds=s.docs.map(d=>({id:d.id,...d.data()}));meds.forEach(cachePhoto);$("syncState").textContent="Synchronisé";render();checkAlerts()},e=>{$("syncState").textContent="Erreur Firebase : "+e.message;console.error(e)});alertTimer=setInterval(checkAlerts,30000)});
+    unsub=onSnapshot(query(medRef(),orderBy("name")),s=>{meds=s.docs.map(d=>({id:d.id,...d.data()}));meds.forEach(cachePhoto);$("syncState").textContent="Synchronisé";render();checkAlerts();openMedicationFromLink()},e=>{$("syncState").textContent="Erreur Firebase : "+e.message;console.error(e)});alertTimer=setInterval(checkAlerts,30000)});
     document.addEventListener("visibilitychange",()=>{if(!document.hidden)checkAlerts()});getRedirectResult(auth).catch(console.error);
     $("scanBtn").onclick=async()=>{if(!("BarcodeDetector"in window)){alert("Scan non disponible ici. Saisis le code manuellement.");return}try{const detector=new BarcodeDetector({formats:["ean_13","ean_8","upc_a","upc_e","code_128"]}),stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}}),v=document.createElement("video");v.srcObject=stream;v.playsInline=true;await v.play();const loop=async()=>{try{const codes=await detector.detect(v);if(codes.length){$("barcode").value=codes[0].rawValue;stream.getTracks().forEach(t=>t.stop());return}}catch{}requestAnimationFrame(loop)};loop()}catch(e){alert(e.message)}};
     </script></body></html>
