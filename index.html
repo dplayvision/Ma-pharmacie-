@@ -71,12 +71,12 @@ label{font-size:13px;font-weight:650;display:block}.grid{display:grid;grid-templ
 <script type="module">
 import{initializeApp}from"https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import{getAuth,GoogleAuthProvider,signInWithPopup,getRedirectResult,onAuthStateChanged,signOut}from"https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-import{getFirestore,collection,doc,setDoc,deleteDoc,onSnapshot,serverTimestamp,query,orderBy}from"https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import{getStorage,ref as storageRef,uploadBytes,getDownloadURL,getBytes,deleteObject}from"https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
+import{getFirestore,collection,doc,setDoc,getDoc,getDocs,deleteDoc,onSnapshot,serverTimestamp,query,orderBy,writeBatch}from"https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 const config={apiKey:"AIzaSyD8FfX9uljCWJi1fg3hE5poocXOCAH-H9A",authDomain:"mes-paiements-jeremy.firebaseapp.com",projectId:"mes-paiements-jeremy",storageBucket:"mes-paiements-jeremy.firebasestorage.app",messagingSenderId:"1085958529684",appId:"1:1085958529684:web:99e5514798cf0b8f098a81"};
-const allowed=["duchenejerem@gmail.com","melissasemiglazoff@gmail.com"],fb=initializeApp(config),auth=getAuth(fb),db=getFirestore(fb),storage=getStorage(fb),provider=new GoogleAuthProvider();
+const allowed=["duchenejerem@gmail.com","melissasemiglazoff@gmail.com"],fb=initializeApp(config),auth=getAuth(fb),db=getFirestore(fb),provider=new GoogleAuthProvider();
 provider.setCustomParameters({prompt:"select_account"});
 let user=null,meds=[],unsub=null,alertTimer=null,selectedPhotoFile=null,selectedPhotoObjectUrl=null,existingPhotoObjectUrl=null;
+const photoObjectUrls=new Map();
 const $=id=>document.getElementById(id),medRef=()=>collection(db,"pharmacieFamiliale","inventaire","medicaments");
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const VAPID_PUBLIC_KEY="BMQ7DS179Ihr1d2OZmKAM0Rh4V_zTAR2k625PlvRuTB7XPhgN-8K6ZJcaFAlKmHHXlQdCgNZcHZuCSuhNUS0vqY";
@@ -122,7 +122,7 @@ function handlePhotoSelection(file){
  selectedPhotoObjectUrl=URL.createObjectURL(file);
  $("photoPreviewImg").src=selectedPhotoObjectUrl;$("photoSelected").textContent=file.name||"Nouvelle photo sélectionnée";
  $("photoPreview").classList.remove("hidden");
- $("photoHelp").textContent="La photo sera enregistrée dans IndexedDB sur ce téléphone et dans Firebase Storage pour la partager.";
+ $("photoHelp").textContent="La photo sera enregistrée dans IndexedDB et synchronisée entre les téléphones via Firestore.";
 }
 $("photoCamera").onchange=()=>handlePhotoSelection($("photoCamera").files[0]);
 $("photoGallery").onchange=()=>handlePhotoSelection($("photoGallery").files[0]);
@@ -158,10 +158,46 @@ async function deleteLocalPhoto(id){
  const localDb=await openPhotoDB();
  return new Promise((resolve,reject)=>{const tx=localDb.transaction("photos","readwrite");tx.objectStore("photos").delete(id);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});
 }
+// Synchronisation des photos comme dans Mes paiements : Firestore en documents/chunks, sans Firebase Storage.
+const photoRoot=()=>collection(db,"pharmacieFamiliale","inventaire","photos");
+const PHOTO_CHUNK_SIZE=350000; // caractères base64 par document, sous la limite Firestore de 1 Mio.
+function blobToBase64(blob){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(",")[1]||"");reader.onerror=()=>reject(reader.error||new Error("Lecture de la photo impossible."));reader.readAsDataURL(blob);});}
+function base64ToBlob(base64,type){const parts=[];for(let i=0;i<base64.length;i+=32768){const slice=base64.slice(i,i+32768);const bytes=Uint8Array.from(atob(slice),c=>c.charCodeAt(0));parts.push(bytes);}return new Blob(parts,{type:type||"image/jpeg"});}
+async function savePhotoFirestore(id,file){
+ const base64=await blobToBase64(file);
+ const photoRef=doc(db,"pharmacieFamiliale","inventaire","photos",id);
+ const chunksRef=collection(photoRef,"chunks");
+ const pieces=[];for(let i=0;i<base64.length;i+=PHOTO_CHUNK_SIZE)pieces.push(base64.slice(i,i+PHOTO_CHUNK_SIZE));
+ // Écrire d'abord les morceaux, puis les métadonnées qui signalent que la photo est complète.
+ for(let i=0;i<pieces.length;i++)await setDoc(doc(chunksRef,String(i).padStart(4,"0")),{index:i,data:pieces[i],updatedAt:serverTimestamp()});
+ const oldChunks=await getDocs(chunksRef);
+ const batch=writeBatch(db);oldChunks.forEach(d=>{const n=Number(d.id);if(Number.isInteger(n)&&n>=pieces.length)batch.delete(d.ref);});
+ if(oldChunks.docs.some(d=>Number.isInteger(Number(d.id))&&Number(d.id)>=pieces.length))await batch.commit();
+ await setDoc(photoRef,{type:file.type||"image/jpeg",size:file.size,chunkCount:pieces.length,updatedAt:serverTimestamp(),updatedBy:user.email},{merge:true});
+ await localPhoto(id,file);
+ return {photoStored:true,photoId:id,photoType:file.type||"image/jpeg",photoSize:file.size};
+}
+async function readPhotoFirestore(id){
+ const photoRef=doc(db,"pharmacieFamiliale","inventaire","photos",id),metaSnap=await getDoc(photoRef);
+ if(!metaSnap.exists())return null;
+ const meta=metaSnap.data(),chunksSnap=await getDocs(query(collection(photoRef,"chunks"),orderBy("index")));
+ if(chunksSnap.size!==Number(meta.chunkCount||0))throw new Error("La photo n'est pas encore entièrement synchronisée.");
+ const base64=chunksSnap.docs.map(d=>d.data().data||"").join("");
+ if(!base64)return null;
+ return base64ToBlob(base64,meta.type||"image/jpeg");
+}
 async function cachePhoto(m){
- if(!m.photoPath)return;
- try{const exists=await getLocalPhoto(m.id);if(!exists){const bytes=await getBytes(storageRef(storage,m.photoPath));await localPhoto(m.id,new Blob([bytes],{type:"image/jpeg"}));}}
- catch(e){console.warn("Cache photo impossible :",m.name,e);}
+ if(!m.photoStored&&!m.photoId)return;
+ try{
+  let blob=await getLocalPhoto(m.id);
+  if(!blob){blob=await readPhotoFirestore(m.id);if(blob)await localPhoto(m.id,blob);}
+  if(blob){const previous=photoObjectUrls.get(m.id);if(previous)URL.revokeObjectURL(previous);photoObjectUrls.set(m.id,URL.createObjectURL(blob));}
+ }catch(e){console.warn("Cache photo impossible :",m.name,e);}
+}
+async function deletePhotoFirestore(id){
+ const photoRef=doc(db,"pharmacieFamiliale","inventaire","photos",id),chunks=await getDocs(collection(photoRef,"chunks"));
+ const batch=writeBatch(db);chunks.forEach(d=>batch.delete(d.ref));batch.delete(photoRef);await batch.commit();
+ const oldUrl=photoObjectUrls.get(id);if(oldUrl)URL.revokeObjectURL(oldUrl);photoObjectUrls.delete(id);
 }
 
 function reset(){
@@ -187,7 +223,7 @@ $("medForm").onsubmit=async e=>{
    doseMorning:+$("doseMorning").value||0,doseNoon:+$("doseNoon").value||0,doseEvening:+$("doseEvening").value||0,
    stockBaseQuantity:+$("quantity").value||0,stockUpdatedDate:todayISO(),expiry:$("expiry").value,
    person:$("person").value,place:$("place").value.trim(),barcode:$("barcode").value.trim(),
-   photoUrl:old?.photoUrl||"",photoPath:old?.photoPath||"",
+   photoUrl:old?.photoUrl||"",photoPath:old?.photoPath||"",photoStored:!!(old?.photoStored||old?.photoId),photoId:old?.photoId||"",photoType:old?.photoType||"",photoSize:old?.photoSize||0,
    reminderOn:$("reminderOn").checked,reminderTime:$("reminderTime").value,reminderEveningTime:$("reminderEveningTime").value,
    reminderFreq:$("reminderFreq").value,reminderStartDate:$("reminderStartDate").value,reminderEndDate:$("reminderEndDate").value,
    notes:$("notes").value.trim(),updatedAt:serverTimestamp(),updatedBy:user.email
@@ -198,23 +234,17 @@ $("medForm").onsubmit=async e=>{
   reset();tab("list");
   $("syncState").textContent=file?"Médicament enregistré — ajout de la photo…":"Médicament enregistré et synchronisé";
   if(file){
-   // La photo est envoyée séparément après l'enregistrement du médicament.
-   (async()=>{
-    try{
-     if(file.size>5*1024*1024)throw new Error("La photo dépasse 5 Mo.");
-     const photoPath=`pharmacieFamiliale/${id}/photo`;
-     const r=storageRef(storage,photoPath);
-     await uploadBytes(r,file,{contentType:file.type||"image/jpeg"});
-     const photoUrl=await getDownloadURL(r);
-     await localPhoto(id,file);
-     await setDoc(medicationRef,{photoUrl,photoPath,updatedAt:serverTimestamp()},{merge:true});
-     $("syncState").textContent="Médicament et photo synchronisés";
-    }catch(photoError){
-     console.error("Erreur d'enregistrement de la photo :",photoError);
-     $("syncState").textContent="Médicament enregistré — photo non synchronisée";
-     alert("Le médicament est bien enregistré, mais la photo n'a pas pu être envoyée. Vérifie la connexion et les règles Firebase Storage. Détail : "+(photoError.message||photoError));
-    }
-   })();
+   try{
+    if(file.size>512000)throw new Error("La photo dépasse 500 Ko. Choisis une photo plus légère.");
+    const photoFields=await savePhotoFirestore(id,file);
+    await setDoc(medicationRef,{...photoFields,photoUrl:"",photoPath:"",updatedAt:serverTimestamp()},{merge:true});
+    const cached=await getLocalPhoto(id);if(cached){const previous=photoObjectUrls.get(id);if(previous)URL.revokeObjectURL(previous);photoObjectUrls.set(id,URL.createObjectURL(cached));}
+    $("syncState").textContent="Médicament et photo synchronisés";render();
+   }catch(photoError){
+    console.error("Erreur d'enregistrement de la photo dans Firestore :",photoError);
+    $("syncState").textContent="Médicament enregistré — photo non synchronisée";
+    alert("Le médicament est bien enregistré, mais la photo n'a pas pu être synchronisée dans Firestore. Vérifie les règles Firestore. Détail : "+(photoError.message||photoError));
+   }
   }
  }catch(err){
   console.error("Erreur d'enregistrement du médicament :",err);
@@ -229,19 +259,19 @@ async function edit(id){
  ["name","dose","form","threshold","doseMorning","doseNoon","doseEvening","expiry","person","place","barcode","reminderTime","reminderEveningTime","reminderFreq","reminderStartDate","reminderEndDate","notes"].forEach(k=>$(k).value=m[k]??"");
  $("quantity").value=currentStock(m);$("reminderOn").checked=!!m.reminderOn;
  $("eveningWrap").classList.toggle("hidden",m.reminderFreq!=="Matin et soir");
- $("photoHelp").textContent=m.photoPath?"Photo déjà enregistrée. Tu peux la conserver ou la remplacer.":"Aucune photo enregistrée pour ce médicament.";
- // Affiche la photo existante dans le formulaire de modification.
+ $("photoHelp").textContent=(m.photoStored||m.photoId||m.photoPath)?"Photo déjà enregistrée. Tu peux la conserver ou la remplacer.":"Aucune photo enregistrée pour ce médicament.";
+ // Affiche la photo existante depuis IndexedDB ou Firestore.
  try{
   let blob=await getLocalPhoto(id);
-  if(!blob&&m.photoPath){const bytes=await getBytes(storageRef(storage,m.photoPath));blob=new Blob([bytes],{type:"image/jpeg"});await localPhoto(id,blob);}
+  if(!blob&&(m.photoStored||m.photoId)){blob=await readPhotoFirestore(id);if(blob)await localPhoto(id,blob);}
   if(blob){existingPhotoObjectUrl=URL.createObjectURL(blob);$("photoPreviewImg").src=existingPhotoObjectUrl;$("photoSelected").textContent="Photo actuelle";$("photoPreview").classList.remove("hidden");}
-  else if(m.photoUrl){$("photoPreviewImg").src=m.photoUrl;$("photoSelected").textContent="Photo actuelle";$("photoPreview").classList.remove("hidden");}
- }catch(err){console.warn("Impossible d'afficher la photo existante :",err);if(m.photoUrl){$("photoPreviewImg").src=m.photoUrl;$("photoSelected").textContent="Photo actuelle";$("photoPreview").classList.remove("hidden");}}
+  else if(m.photoUrl){$("photoPreviewImg").src=m.photoUrl;$("photoSelected").textContent="Ancienne photo actuelle";$("photoPreview").classList.remove("hidden");}
+ }catch(err){console.warn("Impossible d'afficher la photo existante :",err);if(m.photoUrl){$("photoPreviewImg").src=m.photoUrl;$("photoSelected").textContent="Ancienne photo actuelle";$("photoPreview").classList.remove("hidden");}}
 }
 async function remove(id){
  if(!confirm("Supprimer ce médicament ?"))return;
  const m=meds.find(x=>x.id===id);await deleteDoc(doc(db,"pharmacieFamiliale","inventaire","medicaments",id));
- if(m?.photoPath)await deleteObject(storageRef(storage,m.photoPath)).catch(()=>{});
+ if(m?.photoStored||m?.photoId)await deletePhotoFirestore(id).catch(e=>console.warn("Suppression photo Firestore impossible :",e));
  await deleteLocalPhoto(id).catch(()=>{});
 }
 function googlePharmacyUrl(m){
@@ -262,7 +292,7 @@ function showMedicationDetails(id){
  const m=meds.find(x=>x.id===id);if(!m){alert("Ce médicament n'a pas été retrouvé.");return;}
  tab("list");const stock=currentStock(m),rupture=depletionInfo(m);
  $("detailTitle").textContent=m.name||"Fiche médicament";
- $("detailContent").innerHTML=`<div class="med" style="align-items:flex-start">${m.photoUrl?`<img src="${esc(m.photoUrl)}" alt="Boîte de ${esc(m.name)}" style="width:100px;height:100px">`:'<div style="font-size:42px">💊</div>'}<div><b>${esc(m.name)}</b><div class="muted">${esc(m.dose||"Dosage non précisé")} · ${esc(m.form||"")}</div><div class="muted">Pour : ${esc(m.person||"Famille")}</div></div></div><p><b>Stock restant :</b> ${stock}</p><p><b>Consommation :</b> ${dailyUse(m)} unité(s)/jour</p>${rupture?`<p><b>Rupture estimée :</b> dans ${rupture.days} jour(s), le ${rupture.date}</p>`:""}${m.expiry?`<p><b>Péremption :</b> ${esc(m.expiry)}</p>`:""}${m.place?`<p><b>Emplacement :</b> ${esc(m.place)}</p>`:""}${m.notes?`<p><b>Notes :</b> ${esc(m.notes)}</p>`:""}<div class="row"><button type="button" class="secondary" id="detailEdit">Modifier</button></div>`;
+ $("detailContent").innerHTML=`<div class="med" style="align-items:flex-start">${(photoObjectUrls.get(m.id)||m.photoUrl)?`<img src="${esc(photoObjectUrls.get(m.id)||m.photoUrl)}" alt="Boîte de ${esc(m.name)}" style="width:100px;height:100px">`:'<div style="font-size:42px">💊</div>'}<div><b>${esc(m.name)}</b><div class="muted">${esc(m.dose||"Dosage non précisé")} · ${esc(m.form||"")}</div><div class="muted">Pour : ${esc(m.person||"Famille")}</div></div></div><p><b>Stock restant :</b> ${stock}</p><p><b>Consommation :</b> ${dailyUse(m)} unité(s)/jour</p>${rupture?`<p><b>Rupture estimée :</b> dans ${rupture.days} jour(s), le ${rupture.date}</p>`:""}${m.expiry?`<p><b>Péremption :</b> ${esc(m.expiry)}</p>`:""}${m.place?`<p><b>Emplacement :</b> ${esc(m.place)}</p>`:""}${m.notes?`<p><b>Notes :</b> ${esc(m.notes)}</p>`:""}<div class="row"><button type="button" class="secondary" id="detailEdit">Modifier</button></div>`;
  $("medDetails").classList.remove("hidden");$("detailEdit").onclick=()=>{$("medDetails").classList.add("hidden");edit(id);};
  $("medDetails").scrollIntoView({behavior:"smooth",block:"start"});
  const url=new URL(location.href);url.searchParams.delete("openMed");history.replaceState({},"",url.pathname+url.search+url.hash);
@@ -272,7 +302,7 @@ function openMedicationFromLink(){const id=new URL(location.href).searchParams.g
 function render(){
  const q=$("search").value.toLowerCase(),shown=meds.filter(m=>(m.name+" "+m.dose+" "+m.person+" "+m.barcode).toLowerCase().includes(q));
  $("countAll").textContent=meds.length;$("countLow").textContent=meds.filter(m=>currentStock(m)<=+m.threshold).length;$("countExpiry").textContent=meds.filter(m=>m.expiry&&daysUntil(m.expiry)<=30).length;
- $("medicineList").innerHTML=shown.length?shown.map(m=>`<article class="card med">${m.photoUrl?`<img src="${esc(m.photoUrl)}" alt="Boîte de ${esc(m.name)}">`:"💊"}<div style="min-width:0;flex:1"><h3>${esc(m.name)}</h3><div class="muted">${esc(m.dose)} · ${esc(m.form)} · ${esc(m.person)}</div><span class="pill">Stock : ${currentStock(m)}</span>${currentStock(m)<=+m.threshold?'<span class="pill warn">Stock faible</span>':""}${m.expiry?`<span class="pill">Péremption : ${esc(m.expiry)}</span>`:""}${depletionInfo(m)?`<div class="muted">Consommation : ${dailyUse(m)} unité(s)/jour · Environ ${depletionInfo(m).days} jour(s) restant(s) · Rupture estimée : ${depletionInfo(m).date}</div>`:""}${m.reminderOn?`<div class="notice" style="margin:9px 0"><b>🔔 Rappel de prise : ${esc(m.reminderTime||"Heure non définie")}${m.reminderFreq==="Matin et soir"?" et "+esc(m.reminderEveningTime||"20:00"):""}</b><div class="muted">Géré par les notifications de Ma Pharmacie.</div></div>`:""}${depletionInfo(m)?`<button type="button" class="calendarBtn" data-pharmacy="${m.id}">📅 Aller chercher à la pharmacie</button>`:""}<div class="row"><button class="secondary" data-edit="${m.id}">Modifier</button><button class="danger" data-del="${m.id}">Supprimer</button></div></div></article>`).join(""):'<div class="empty">Aucun médicament enregistré.</div>';
+ $("medicineList").innerHTML=shown.length?shown.map(m=>`<article class="card med">${(photoObjectUrls.get(m.id)||m.photoUrl)?`<img src="${esc(photoObjectUrls.get(m.id)||m.photoUrl)}" alt="Boîte de ${esc(m.name)}">`:"💊"}<div style="min-width:0;flex:1"><h3>${esc(m.name)}</h3><div class="muted">${esc(m.dose)} · ${esc(m.form)} · ${esc(m.person)}</div><span class="pill">Stock : ${currentStock(m)}</span>${currentStock(m)<=+m.threshold?'<span class="pill warn">Stock faible</span>':""}${m.expiry?`<span class="pill">Péremption : ${esc(m.expiry)}</span>`:""}${depletionInfo(m)?`<div class="muted">Consommation : ${dailyUse(m)} unité(s)/jour · Environ ${depletionInfo(m).days} jour(s) restant(s) · Rupture estimée : ${depletionInfo(m).date}</div>`:""}${m.reminderOn?`<div class="notice" style="margin:9px 0"><b>🔔 Rappel de prise : ${esc(m.reminderTime||"Heure non définie")}${m.reminderFreq==="Matin et soir"?" et "+esc(m.reminderEveningTime||"20:00"):""}</b><div class="muted">Géré par les notifications de Ma Pharmacie.</div></div>`:""}${depletionInfo(m)?`<button type="button" class="calendarBtn" data-pharmacy="${m.id}">📅 Aller chercher à la pharmacie</button>`:""}<div class="row"><button class="secondary" data-edit="${m.id}">Modifier</button><button class="danger" data-del="${m.id}">Supprimer</button></div></div></article>`).join(""):'<div class="empty">Aucun médicament enregistré.</div>';
  document.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>edit(b.dataset.edit));
  document.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>remove(b.dataset.del));
  document.querySelectorAll("[data-pharmacy]").forEach(b=>b.onclick=()=>openPharmacyCalendar(b.dataset.pharmacy));
@@ -312,7 +342,7 @@ onAuthStateChanged(auth,u=>{
  if(!allowed.includes((u.email||"").toLowerCase())){signOut(auth);$("loginMsg").textContent="Compte non autorisé.";return;}
  user=u;$("login").classList.add("hidden");$("app").classList.remove("hidden");$("logout").classList.remove("hidden");$("welcome").textContent="Bonjour "+(u.displayName||u.email);
  $("pushState").textContent=("Notification"in window&&Notification.permission==="granted")?"Autorisation accordée sur ce téléphone":"Autorisation non activée";
- unsub=onSnapshot(query(medRef(),orderBy("name")),s=>{meds=s.docs.map(d=>({id:d.id,...d.data()}));meds.forEach(cachePhoto);$("syncState").textContent="Synchronisé";render();checkAlerts();openMedicationFromLink();},e=>{$("syncState").textContent="Erreur Firebase : "+e.message;console.error(e);});
+ unsub=onSnapshot(query(medRef(),orderBy("name")),async s=>{meds=s.docs.map(d=>({id:d.id,...d.data()}));$("syncState").textContent="Synchronisé";render();await Promise.all(meds.map(cachePhoto));render();checkAlerts();openMedicationFromLink();},e=>{$("syncState").textContent="Erreur Firebase : "+e.message;console.error(e);});
  alertTimer=setInterval(checkAlerts,30000);
 });
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)checkAlerts();});getRedirectResult(auth).catch(console.error);
