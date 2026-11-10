@@ -76,7 +76,7 @@ import{getStorage,ref as storageRef,uploadBytes,getDownloadURL,getBytes,deleteOb
 const config={apiKey:"AIzaSyD8FfX9uljCWJi1fg3hE5poocXOCAH-H9A",authDomain:"mes-paiements-jeremy.firebaseapp.com",projectId:"mes-paiements-jeremy",storageBucket:"mes-paiements-jeremy.firebasestorage.app",messagingSenderId:"1085958529684",appId:"1:1085958529684:web:99e5514798cf0b8f098a81"};
 const allowed=["duchenejerem@gmail.com","melissasemiglazoff@gmail.com"],fb=initializeApp(config),auth=getAuth(fb),db=getFirestore(fb),storage=getStorage(fb),provider=new GoogleAuthProvider();
 provider.setCustomParameters({prompt:"select_account"});
-let user=null,meds=[],unsub=null,alertTimer=null,selectedPhotoFile=null,selectedPhotoObjectUrl=null;
+let user=null,meds=[],unsub=null,alertTimer=null,selectedPhotoFile=null,selectedPhotoObjectUrl=null,existingPhotoObjectUrl=null;
 const $=id=>document.getElementById(id),medRef=()=>collection(db,"pharmacieFamiliale","inventaire","medicaments");
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const VAPID_PUBLIC_KEY="BMQ7DS179Ihr1d2OZmKAM0Rh4V_zTAR2k625PlvRuTB7XPhgN-8K6ZJcaFAlKmHHXlQdCgNZcHZuCSuhNUS0vqY";
@@ -108,6 +108,7 @@ $("choosePhoto").onclick=()=>$("photoGallery").click();
 function clearSelectedPhoto(){
  selectedPhotoFile=null;
  if(selectedPhotoObjectUrl){URL.revokeObjectURL(selectedPhotoObjectUrl);selectedPhotoObjectUrl=null;}
+ if(existingPhotoObjectUrl){URL.revokeObjectURL(existingPhotoObjectUrl);existingPhotoObjectUrl=null;}
  $("photoCamera").value="";$("photoGallery").value="";
  $("photoPreview").classList.add("hidden");$("photoPreviewImg").removeAttribute("src");$("photoSelected").textContent="";
  $("photoHelp").textContent="Prends une photo avec le GSM ou choisis une image déjà présente dans tes albums.";
@@ -222,13 +223,20 @@ $("medForm").onsubmit=async e=>{
   submitButton.disabled=false;submitButton.textContent=originalButtonText;
  }
 };
-function edit(id){
+async function edit(id){
  const m=meds.find(x=>x.id===id);if(!m)return;clearSelectedPhoto();tab("add");
  $("formTitle").textContent="Modifier le médicament";$("medId").value=id;
  ["name","dose","form","threshold","doseMorning","doseNoon","doseEvening","expiry","person","place","barcode","reminderTime","reminderEveningTime","reminderFreq","reminderStartDate","reminderEndDate","notes"].forEach(k=>$(k).value=m[k]??"");
  $("quantity").value=currentStock(m);$("reminderOn").checked=!!m.reminderOn;
  $("eveningWrap").classList.toggle("hidden",m.reminderFreq!=="Matin et soir");
- $("photoHelp").textContent=m.photoPath?"Une photo est déjà enregistrée. Choisis une nouvelle photo uniquement pour la remplacer.":"Aucune photo enregistrée pour ce médicament.";
+ $("photoHelp").textContent=m.photoPath?"Photo déjà enregistrée. Tu peux la conserver ou la remplacer.":"Aucune photo enregistrée pour ce médicament.";
+ // Affiche la photo existante dans le formulaire de modification.
+ try{
+  let blob=await getLocalPhoto(id);
+  if(!blob&&m.photoPath){const bytes=await getBytes(storageRef(storage,m.photoPath));blob=new Blob([bytes],{type:"image/jpeg"});await localPhoto(id,blob);}
+  if(blob){existingPhotoObjectUrl=URL.createObjectURL(blob);$("photoPreviewImg").src=existingPhotoObjectUrl;$("photoSelected").textContent="Photo actuelle";$("photoPreview").classList.remove("hidden");}
+  else if(m.photoUrl){$("photoPreviewImg").src=m.photoUrl;$("photoSelected").textContent="Photo actuelle";$("photoPreview").classList.remove("hidden");}
+ }catch(err){console.warn("Impossible d'afficher la photo existante :",err);if(m.photoUrl){$("photoPreviewImg").src=m.photoUrl;$("photoSelected").textContent="Photo actuelle";$("photoPreview").classList.remove("hidden");}}
 }
 async function remove(id){
  if(!confirm("Supprimer ce médicament ?"))return;
