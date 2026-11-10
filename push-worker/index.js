@@ -1,550 +1,173 @@
+const admin = require('firebase-admin');
+const webpush = require('web-push');
+const crypto = require('node:crypto');
 
-const admin = require("firebase-admin");
-const webpush = require("web-push");
-const crypto = require("node:crypto");
-
-// ==========================================
-// CONFIGURATION
-// ==========================================
-
-const serviceAccount = JSON.parse(
-  process.env.FIREBASE_SERVICE_ACCOUNT || "{}"
-);
-
-const vapidPublicKey = (process.env.VAPID_PUBLIC_KEY || "").trim();
-const vapidPrivateKey = (process.env.VAPID_PRIVATE_KEY || "").trim();
-
-// Rattrapage maximal : 3 heures
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
+const vapidPublicKey = (process.env.VAPID_PUBLIC_KEY || '').trim();
+const vapidPrivateKey = (process.env.VAPID_PRIVATE_KEY || '').trim();
+const TIME_ZONE = 'Europe/Brussels';
 const REMINDER_CATCHUP_MINUTES = 180;
+const STOCK_CATCHUP_MINUTES = 15;
+const DEFAULT_STOCK_TIME = '09:00';
 
-// Fuseau horaire
-const TIME_ZONE = "Europe/Brussels";
-
-// ==========================================
-// VALIDATION
-// ==========================================
-
-if (
-  !serviceAccount.project_id ||
-  !serviceAccount.client_email ||
-  !vapidPublicKey ||
-  !vapidPrivateKey
-) {
-  throw new Error("Configuration Firebase ou VAPID manquante.");
+if (!serviceAccount.project_id || !serviceAccount.client_email || !vapidPublicKey || !vapidPrivateKey) {
+  throw new Error('Configuration Firebase ou VAPID manquante.');
 }
-
-if (!/^[A-Za-z0-9_-]{43}$/.test(vapidPrivateKey)) {
-  throw new Error("Format de la clé privée VAPID invalide.");
-}
-
-console.log("Compte utilisé :", serviceAccount.client_email);
-console.log("Projet utilisé :", serviceAccount.project_id);
-console.log("Clé publique présente :", !!vapidPublicKey);
-console.log("Clé privée présente :", !!vapidPrivateKey);
-
-// Vérification de la paire VAPID
-const ecdh = crypto.createECDH("prime256v1");
-const privateBytes = Buffer.from(vapidPrivateKey, "base64url");
-
-if (privateBytes.length !== 32) {
-  throw new Error("Longueur de clé privée VAPID incorrecte.");
-}
-
+if (!/^[A-Za-z0-9_-]{43}$/.test(vapidPrivateKey)) throw new Error('Format de la clé privée VAPID invalide.');
+const ecdh = crypto.createECDH('prime256v1');
+const privateBytes = Buffer.from(vapidPrivateKey, 'base64url');
+if (privateBytes.length !== 32) throw new Error('Longueur de clé privée VAPID incorrecte.');
 ecdh.setPrivateKey(privateBytes);
-
-const derivedPublicKey = ecdh
-  .getPublicKey(undefined, "uncompressed")
-  .toString("base64url");
-
-if (derivedPublicKey !== vapidPublicKey) {
-  throw new Error("Les clés publiques et privées VAPID ne correspondent pas.");
+if (ecdh.getPublicKey(undefined, 'uncompressed').toString('base64url') !== vapidPublicKey) {
+  throw new Error('Les clés publiques et privées VAPID ne correspondent pas.');
 }
-
-// ==========================================
-// INITIALISATION FIREBASE
-// ==========================================
-
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
-});
-
+admin.initializeApp({credential: admin.credential.cert(serviceAccount)});
 const db = admin.firestore();
-
-webpush.setVapidDetails(
-  "mailto:duchenejerem@gmail.com",
-  vapidPublicKey,
-  vapidPrivateKey
-);
-
-const base = db.collection("pharmacieFamiliale").doc("inventaire");
-
-const medicinesRef = base.collection("medicaments");
-const devicesRef = base.collection("notificationDevices");
-const logsRef = base.collection("notificationLog");
-
-// ==========================================
-// DATE ET HEURE
-// ==========================================
+webpush.setVapidDetails('mailto:duchenejerem@gmail.com', vapidPublicKey, vapidPrivateKey);
+const base = db.collection('pharmacieFamiliale').doc('inventaire');
+const medicinesRef = base.collection('medicaments');
+const devicesRef = base.collection('notificationDevices');
+const logsRef = base.collection('notificationLog');
 
 function brusselsParts(date = new Date()) {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: TIME_ZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23"
-  }).formatToParts(date);
-
-  return Object.fromEntries(
-    parts.map(part => [part.type, part.value])
-  );
+  return Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
+    timeZone: TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+  }).formatToParts(date).map(p => [p.type, p.value]));
 }
-
-function addDays(dateString, amount) {
-  const [y, m, d] = dateString.split("-").map(Number);
-
-  const date = new Date(Date.UTC(y, m - 1, d + amount));
-
-  return [
-    date.getUTCFullYear(),
-    String(date.getUTCMonth() + 1).padStart(2, "0"),
-    String(date.getUTCDate()).padStart(2, "0")
-  ].join("-");
+function addDays(iso, n) {
+  const [y,m,d] = iso.split('-').map(Number);
+  const x = new Date(Date.UTC(y,m-1,d+n));
+  return `${x.getUTCFullYear()}-${String(x.getUTCMonth()+1).padStart(2,'0')}-${String(x.getUTCDate()).padStart(2,'0')}`;
 }
-
-function daysUntil(dateString, today) {
-  if (
-    typeof dateString !== "string" ||
-    !/^\d{4}-\d{2}-\d{2}$/.test(dateString)
-  ) {
-    return null;
-  }
-
-  const [y, m, d] = dateString.split("-").map(Number);
-  const [ty, tm, td] = today.split("-").map(Number);
-
-  return Math.round(
-    (Date.UTC(y, m - 1, d) -
-      Date.UTC(ty, tm - 1, td)) / 86400000
-  );
+function daysUntil(iso, today) {
+  if (typeof iso !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
+  const [y,m,d] = iso.split('-').map(Number);
+  const [a,b,c] = today.split('-').map(Number);
+  return Math.round((Date.UTC(y,m-1,d)-Date.UTC(a,b-1,c))/86400000);
 }
-
-function validTime(value) {
-  return (
-    typeof value === "string" &&
-    /^([01]\d|2[0-3]):[0-5]\d$/.test(value)
-  );
+const validTime = s => typeof s === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(s);
+const minuteOf = s => { const [h,m] = s.split(':').map(Number); return h*60+m; };
+function dueSlot(time, today, nowMinutes, catchup) {
+  if (!validTime(time)) return null;
+  let elapsed = nowMinutes - minuteOf(time);
+  let date = today;
+  if (elapsed < 0) { elapsed += 1440; date = addDays(today,-1); }
+  return elapsed >= 0 && elapsed <= catchup ? {date, elapsed} : null;
 }
-
-// ==========================================
-// CONSTRUCTION DES RAPPELS
-// ==========================================
-
-function eventsForMedicine(m, today, nowMinutes) {
+function dailyUse(m) {
+  return (Number(m.doseMorning)||0)+(Number(m.doseNoon)||0)+(Number(m.doseEvening)||0);
+}
+function currentStock(m, today) {
+  const base = Number(m.stockBaseQuantity ?? m.quantity) || 0;
+  const elapsed = m.stockUpdatedDate ? Math.max(0,-(daysUntil(m.stockUpdatedDate,today) ?? 0)) : 0;
+  return Math.max(0,base-elapsed*dailyUse(m));
+}
+function medicineEvents(m,today,nowMinutes) {
   const events = [];
-
-  console.log("Médicament :", m.name || m.id);
-
-  // ----------------------------------------
-  // RAPPELS DE PRISE
-  // ----------------------------------------
-
   if (m.reminderOn === true) {
-    const times = [];
-
-    if (validTime(m.reminderTime)) {
-      times.push(m.reminderTime);
-    }
-
-    if (m.reminderFreq === "Matin et soir") {
-      const eveningTime = m.reminderEveningTime || "20:00";
-
-      if (validTime(eveningTime)) {
-        times.push(eveningTime);
-      }
-    }
-
-    const yesterday = addDays(today, -1);
-
-    for (const time of [...new Set(times)]) {
-      const [hour, minute] = time.split(":").map(Number);
-
-      const targetMinutes = hour * 60 + minute;
-
-      let elapsed = nowMinutes - targetMinutes;
-      let scheduledDate = today;
-
-      // Gestion du passage à minuit
-      if (elapsed < 0) {
-        elapsed += 1440;
-        scheduledDate = yesterday;
-      }
-
-      // Vérification de la fenêtre de rattrapage
-      if (
-        elapsed >= 0 &&
-        elapsed <= REMINDER_CATCHUP_MINUTES
-      ) {
-        const key =
-          `prise_${scheduledDate}_${time.replace(":", "")}`;
-
-        events.push({
-          key,
-          title: "Ma Pharmacie — rappel de prise",
-          body:
-            `${m.name || "Médicament"}` +
-            `${m.dose ? " · " + m.dose : ""}` +
-            ` — ${m.person || "Famille"}`
-        });
-
-        console.log("RAPPEL DÉTECTÉ :", {
-          medicament: m.name,
-          heurePrévue: time,
-          datePrévue: scheduledDate,
-          retardMinutes: elapsed
-        });
-      }
+    const times = [m.reminderTime];
+    if (m.reminderFreq === 'Matin et soir') times.push(m.reminderEveningTime || '20:00');
+    for (const time of new Set(times.filter(validTime))) {
+      const slot = dueSlot(time,today,nowMinutes,REMINDER_CATCHUP_MINUTES);
+      if (!slot) continue;
+      // Respecter les dates de début et de fin, y compris après minuit.
+      if (m.reminderStartDate && slot.date < m.reminderStartDate) continue;
+      if (m.reminderEndDate && slot.date > m.reminderEndDate) continue;
+      events.push({key:`prise_${slot.date}_${time.replace(':','')}`,
+        title:'Ma Pharmacie — rappel de prise',
+        body:`${m.name||'Médicament'}${m.dose?' · '+m.dose:''} — ${m.person||'Famille'}`});
     }
   }
-
-  // ----------------------------------------
-  // PÉREMPTION
-  // ----------------------------------------
-
   if (m.expiry) {
-    const remainingDays = daysUntil(m.expiry, today);
-
-    if ([30, 7, 1, 0].includes(remainingDays)) {
-      events.push({
-        key: `peremption_${today}_${remainingDays}`,
-        title: "Ma Pharmacie — péremption",
-        body:
-          remainingDays === 0
-            ? `${m.name} arrive à péremption aujourd'hui.`
-            : `${m.name} arrive à péremption dans ${remainingDays} jour(s).`
-      });
-    }
+    const n = daysUntil(m.expiry,today);
+    if ([30,7,1,0].includes(n)) events.push({key:`peremption_${today}_${n}`,
+      title:'Ma Pharmacie — péremption',
+      body:n===0?`${m.name} arrive à péremption aujourd'hui.`:`${m.name} arrive à péremption dans ${n} jour(s).`});
   }
-
-  // ----------------------------------------
-  // STOCK FAIBLE
-  // ----------------------------------------
-
-  const quantity = Number(m.quantity ?? 0);
-  const threshold = Number(m.threshold ?? 0);
-
-  if (quantity <= threshold) {
-    events.push({
-      key: `stock_${today}`,
-      title: "Ma Pharmacie — stock faible",
-      body:
-        `Stock faible : ${m.name} (${quantity} restant(s)).`
-    });
-  }
-
   return events;
 }
-
-// ==========================================
-// IDENTIFIANTS ET JOURNAL
-// ==========================================
-
-function makeId(value) {
-  return crypto
-    .createHash("sha256")
-    .update(value)
-    .digest("hex");
+function stockEventForDevice(m,device,today,nowMinutes) {
+  const time = validTime(device.lowStockTime) ? device.lowStockTime : DEFAULT_STOCK_TIME;
+  const slot = dueSlot(time,today,nowMinutes,STOCK_CATCHUP_MINUTES);
+  if (!slot) return null;
+  const quantity = currentStock(m,slot.date);
+  if (quantity > Number(m.threshold ?? 0)) return null;
+  return {key:`stock_${slot.date}`,title:'Ma Pharmacie — stock faible',
+    body:`Stock faible : ${m.name} (${quantity} restant(s)).`};
 }
-
-// Réservation atomique pour éviter les doublons
-async function claimNotification(logRef, data) {
-  return db.runTransaction(async transaction => {
-    const previous = await transaction.get(logRef);
-
-    if (previous.exists) {
-      return false;
-    }
-
-    transaction.create(logRef, {
-      ...data,
-      status: "sending",
-      createdAt: admin.firestore.FieldValue.serverTimestamp()
-    });
-
+const makeId = s => crypto.createHash('sha256').update(s).digest('hex');
+async function claimNotification(ref,data) {
+  return db.runTransaction(async tx => {
+    const old = await tx.get(ref);
+    if (old.exists) return false;
+    tx.create(ref,{...data,status:'sending',createdAt:admin.firestore.FieldValue.serverTimestamp()});
     return true;
   });
 }
-
-function errorDetails(error) {
-  let body = error && error.body;
-
-  if (Buffer.isBuffer(body)) {
-    body = body.toString("utf8");
-  }
-
-  if (typeof body !== "string") {
-    try {
-      body = body ? JSON.stringify(body) : "";
-    } catch {
-      body = String(body || "");
-    }
-  }
-
-  return {
-    code: error && error.code,
-    status: error && error.statusCode,
-    message: error && error.message,
-    body: body || "(aucun détail)"
-  };
+function errorDetails(e) {
+  let body=e?.body;
+  if (Buffer.isBuffer(body)) body=body.toString('utf8');
+  if (typeof body!=='string') {try{body=body?JSON.stringify(body):'';}catch{body=String(body||'');}}
+  return {code:e?.code,status:e?.statusCode,message:e?.message,body:body||'(aucun détail)'};
 }
-
-// ==========================================
-// ENVOI DES NOTIFICATIONS
-// ==========================================
-
-async function sendNotification(device, medicine, event) {
-  const subscription =
-    device.subscription || {
-      endpoint: device.endpoint,
-      keys: device.keys
-    };
-
-  if (
-    !subscription.endpoint ||
-    !subscription.keys?.p256dh ||
-    !subscription.keys?.auth
-  ) {
-    console.warn("Abonnement incomplet :", device.id);
-    return "invalid";
+async function sendNotification(device,medicine,event) {
+  const subscription=device.subscription || {endpoint:device.endpoint,keys:device.keys};
+  if (!subscription?.endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth) {
+    console.warn('Abonnement incomplet :',device.id);return 'invalid';
   }
-
-  const logId = makeId(
-    `${device.id}|${medicine.id}|${event.key}`
-  );
-
-  const logRef = logsRef.doc(logId);
-
+  const logRef=logsRef.doc(makeId(`${device.id}|${medicine.id}|${event.key}`));
   let claimed;
-
+  try {claimed=await claimNotification(logRef,{medicineId:medicine.id,deviceId:device.id,eventKey:event.key});}
+  catch(e){console.error('Erreur réservation Firestore',errorDetails(e));return 'firestore_error';}
+  if (!claimed) return 'skipped';
   try {
-    claimed = await claimNotification(logRef, {
-      medicineId: medicine.id,
-      deviceId: device.id,
-      eventKey: event.key
-    });
-  } catch (error) {
-    console.error(
-      "ERREUR réservation Firestore :",
-      errorDetails(error)
-    );
-
-    return "firestore_error";
-  }
-
-  if (!claimed) {
-    console.log("Déjà envoyé :", event.key);
-    return "skipped";
-  }
-
-  try {
-    await webpush.sendNotification(
-      subscription,
-      JSON.stringify({
-        title: event.title,
-        body: event.body,
-        url: "./"
-      })
-    );
-
-    console.log("NOTIFICATION ENVOYÉE :", {
-      appareil: device.id,
-      medicament: medicine.name,
-      evenement: event.key
-    });
-
-    try {
-      await logRef.update({
-        status: "sent",
-        sentAt: admin.firestore.FieldValue.serverTimestamp()
-      });
-    } catch (error) {
-      console.error(
-        "Push envoyé mais mise à jour du journal impossible :",
-        errorDetails(error)
-      );
+    await webpush.sendNotification(subscription,JSON.stringify({
+      title:event.title,body:event.body,
+      url:`./?openMed=${encodeURIComponent(medicine.id)}`,
+      medicationId:medicine.id
+    }));
+    console.log('NOTIFICATION ENVOYÉE',device.id,medicine.name,event.key);
+    try {await logRef.update({status:'sent',sentAt:admin.firestore.FieldValue.serverTimestamp()});}
+    catch(e){console.error('Push envoyé, journal non mis à jour',errorDetails(e));}
+    return 'sent';
+  } catch(e) {
+    console.error('ERREUR PUSH',device.id,medicine.name,event.key,errorDetails(e));
+    try {await logRef.delete();}catch(err){console.error('Libération impossible',errorDetails(err));}
+    if (e.statusCode===404 || e.statusCode===410) {
+      try {await devicesRef.doc(device.id).delete();}catch(err){console.error('Suppression appareil impossible',errorDetails(err));}
+      return 'expired';
     }
-
-    return "sent";
-
-  } catch (error) {
-    console.error(
-      "ERREUR PUSH :",
-      {
-        appareil: device.id,
-        medicament: medicine.name,
-        evenement: event.key,
-        ...errorDetails(error)
-      }
-    );
-
-    // Suppression de la réservation si l'envoi a échoué
-    try {
-      await logRef.delete();
-    } catch (deleteError) {
-      console.error(
-        "Impossible de libérer la réservation :",
-        errorDetails(deleteError)
-      );
-    }
-
-    if (
-      error.statusCode === 404 ||
-      error.statusCode === 410
-    ) {
-      try {
-        await devicesRef.doc(device.id).delete();
-        console.log("Appareil expiré supprimé :", device.id);
-      } catch (deleteError) {
-        console.error(
-          "Erreur suppression appareil :",
-          errorDetails(deleteError)
-        );
-      }
-
-      return "expired";
-    }
-
-    return "push_error";
+    return 'push_error';
   }
 }
-
-// ==========================================
-// PROGRAMME PRINCIPAL
-// ==========================================
-
 async function main() {
-  const p = brusselsParts();
-
-  const today = `${p.year}-${p.month}-${p.day}`;
-
-  const nowMinutes =
-    Number(p.hour) * 60 + Number(p.minute);
-
-  console.log("================================");
-  console.log("MA PHARMACIE — WORKER");
-  console.log("Date :", today);
-  console.log("Heure :", `${p.hour}:${p.minute}`);
-  console.log("Fuseau :", TIME_ZONE);
-  console.log("Rattrapage :", REMINDER_CATCHUP_MINUTES, "minutes");
-  console.log("================================");
-
-  // Lecture des médicaments
-  const medicineSnap = await medicinesRef.get();
-
-  console.log(
-    "Médicaments trouvés :",
-    medicineSnap.size
-  );
-
-  // Lecture des appareils
-  const deviceSnap = await devicesRef.get();
-
-  console.log(
-    "Appareils inscrits :",
-    deviceSnap.size
-  );
-
-  if (deviceSnap.empty) {
-    console.log("Aucun appareil inscrit.");
-    return;
-  }
-
-  const devices = deviceSnap.docs.map(doc => ({
-    id: doc.id,
-    ...doc.data()
-  }));
-
-  const stats = {
-    detected: 0,
-    sent: 0,
-    skipped: 0,
-    pushErrors: 0,
-    firestoreErrors: 0
-  };
-
-  // Parcours des médicaments
-  for (const medicineDoc of medicineSnap.docs) {
-    const medicine = {
-      id: medicineDoc.id,
-      ...medicineDoc.data()
-    };
-
-    const events = eventsForMedicine(
-      medicine,
-      today,
-      nowMinutes
-    );
-
-    stats.detected += events.length;
-
-    // Parcours des événements
-    for (const event of events) {
-
-      // Envoi vers chaque appareil
-      for (const device of devices) {
-        const result = await sendNotification(
-          device,
-          medicine,
-          event
-        );
-
-        switch (result) {
-          case "sent":
-            stats.sent++;
-            break;
-
-          case "skipped":
-            stats.skipped++;
-            break;
-
-          case "push_error":
-          case "expired":
-            stats.pushErrors++;
-            break;
-
-          case "firestore_error":
-            stats.firestoreErrors++;
-            break;
-        }
+  const p=brusselsParts();
+  const today=`${p.year}-${p.month}-${p.day}`;
+  const nowMinutes=Number(p.hour)*60+Number(p.minute);
+  console.log('MA PHARMACIE — WORKER',today,`${p.hour}:${p.minute}`,TIME_ZONE);
+  const [medicineSnap,deviceSnap]=await Promise.all([medicinesRef.get(),devicesRef.get()]);
+  console.log('Médicaments trouvés :',medicineSnap.size,'Appareils inscrits :',deviceSnap.size);
+  if (deviceSnap.empty) return;
+  const devices=deviceSnap.docs.map(d=>({id:d.id,...d.data()}));
+  const stats={detected:0,sent:0,skipped:0,pushErrors:0,firestoreErrors:0,invalid:0};
+  for (const d of medicineSnap.docs) {
+    const medicine={id:d.id,...d.data()};
+    const common=medicineEvents(medicine,today,nowMinutes);
+    for (const device of devices) {
+      const stock=stockEventForDevice(medicine,device,today,nowMinutes);
+      const events=stock?[...common,stock]:common;
+      for (const event of events) {
+        stats.detected++;
+        const result=await sendNotification(device,medicine,event);
+        if (result==='sent') stats.sent++;
+        else if (result==='skipped') stats.skipped++;
+        else if (result==='firestore_error') stats.firestoreErrors++;
+        else if (result==='invalid') stats.invalid++;
+        else stats.pushErrors++;
       }
     }
   }
-
-  // ========================================
-  // BILAN FINAL
-  // ========================================
-
-  console.log("================================");
-  console.log("BILAN FINAL MA PHARMACIE");
-  console.log("Événements détectés :", stats.detected);
-  console.log("Notifications envoyées :", stats.sent);
-  console.log("Déjà enregistrées :", stats.skipped);
-  console.log("Erreurs Push :", stats.pushErrors);
-  console.log("Erreurs Firestore :", stats.firestoreErrors);
-  console.log("================================");
+  console.log('BILAN FINAL',stats);
 }
-
-// ==========================================
-// DÉMARRAGE
-// ==========================================
-
-main().catch(error => {
-  console.error(
-    "ERREUR FATALE DU WORKER :",
-    errorDetails(error)
-  );
-
-  process.exitCode = 1;
-});
+main().catch(e=>{console.error('ERREUR FATALE DU WORKER',errorDetails(e));process.exitCode=1;});
