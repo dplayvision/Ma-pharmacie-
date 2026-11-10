@@ -171,30 +171,56 @@ function reset(){
  clearSelectedPhoto();
 }
 $("medForm").onsubmit=async e=>{
- e.preventDefault();if(!user)return;
+ e.preventDefault();
+ if(!user){alert("Connecte-toi avant d'enregistrer.");return;}
+ const submitButton=$("medForm").querySelector('button[type="submit"]');
+ const originalButtonText=submitButton.textContent;
+ submitButton.disabled=true;submitButton.textContent="Enregistrement…";
  try{
-  const id=$("medId").value||doc(medRef()).id,old=meds.find(x=>x.id===id),file=selectedPhotoFile;
-  let photoUrl=old?.photoUrl||"",photoPath=old?.photoPath||"";
-  if(file){
-   if(file.size>512000)throw Error("Photo maximum : 500 Ko.");
-   photoPath=`pharmacieFamiliale/${id}/photo`;
-   const r=storageRef(storage,photoPath);await uploadBytes(r,file,{contentType:file.type||"image/jpeg"});
-   photoUrl=await getDownloadURL(r);
-   await localPhoto(id,file);
-  }
+  const id=$("medId").value||doc(medRef()).id;
+  const old=meds.find(x=>x.id===id);
+  const file=selectedPhotoFile;
   const data={
    name:$("name").value.trim(),dose:$("dose").value.trim(),form:$("form").value,
    quantity:+$("quantity").value,threshold:+$("threshold").value,
    doseMorning:+$("doseMorning").value||0,doseNoon:+$("doseNoon").value||0,doseEvening:+$("doseEvening").value||0,
    stockBaseQuantity:+$("quantity").value||0,stockUpdatedDate:todayISO(),expiry:$("expiry").value,
-   person:$("person").value,place:$("place").value.trim(),barcode:$("barcode").value.trim(),photoUrl,photoPath,
+   person:$("person").value,place:$("place").value.trim(),barcode:$("barcode").value.trim(),
+   photoUrl:old?.photoUrl||"",photoPath:old?.photoPath||"",
    reminderOn:$("reminderOn").checked,reminderTime:$("reminderTime").value,reminderEveningTime:$("reminderEveningTime").value,
    reminderFreq:$("reminderFreq").value,reminderStartDate:$("reminderStartDate").value,reminderEndDate:$("reminderEndDate").value,
    notes:$("notes").value.trim(),updatedAt:serverTimestamp(),updatedBy:user.email
   };
-  await setDoc(doc(db,"pharmacieFamiliale","inventaire","medicaments",id),old?data:{...data,createdAt:serverTimestamp(),createdBy:user.email});
+  // On sauvegarde d'abord le médicament dans Firestore : la photo ne peut plus bloquer l'enregistrement.
+  const medicationRef=doc(db,"pharmacieFamiliale","inventaire","medicaments",id);
+  await setDoc(medicationRef,old?data:{...data,createdAt:serverTimestamp(),createdBy:user.email});
   reset();tab("list");
- }catch(e){alert("Enregistrement impossible : "+e.message);}
+  $("syncState").textContent=file?"Médicament enregistré — ajout de la photo…":"Médicament enregistré et synchronisé";
+  if(file){
+   // La photo est envoyée séparément après l'enregistrement du médicament.
+   (async()=>{
+    try{
+     if(file.size>5*1024*1024)throw new Error("La photo dépasse 5 Mo.");
+     const photoPath=`pharmacieFamiliale/${id}/photo`;
+     const r=storageRef(storage,photoPath);
+     await uploadBytes(r,file,{contentType:file.type||"image/jpeg"});
+     const photoUrl=await getDownloadURL(r);
+     await localPhoto(id,file);
+     await setDoc(medicationRef,{photoUrl,photoPath,updatedAt:serverTimestamp()},{merge:true});
+     $("syncState").textContent="Médicament et photo synchronisés";
+    }catch(photoError){
+     console.error("Erreur d'enregistrement de la photo :",photoError);
+     $("syncState").textContent="Médicament enregistré — photo non synchronisée";
+     alert("Le médicament est bien enregistré, mais la photo n'a pas pu être envoyée. Vérifie la connexion et les règles Firebase Storage. Détail : "+(photoError.message||photoError));
+    }
+   })();
+  }
+ }catch(err){
+  console.error("Erreur d'enregistrement du médicament :",err);
+  alert("Enregistrement impossible : "+(err.message||err));
+ }finally{
+  submitButton.disabled=false;submitButton.textContent=originalButtonText;
+ }
 };
 function edit(id){
  const m=meds.find(x=>x.id===id);if(!m)return;clearSelectedPhoto();tab("add");
