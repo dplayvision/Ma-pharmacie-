@@ -74,14 +74,14 @@ function medicineEvents(m,today,nowMinutes) {
       // Respecter les dates de début et de fin, y compris après minuit.
       if (m.reminderStartDate && slot.date < m.reminderStartDate) continue;
       if (m.reminderEndDate && slot.date > m.reminderEndDate) continue;
-      events.push({key:`prise_${slot.date}_${time.replace(':','')}`,
+      events.push({type:'reminder',key:`prise_${slot.date}_${time.replace(':','')}`,
         title:'Ma Pharmacie — rappel de prise',
         body:`${m.name||'Médicament'}${m.dose?' · '+m.dose:''} — ${m.person||'Famille'}`});
     }
   }
   if (m.expiry) {
     const n = daysUntil(m.expiry,today);
-    if ([30,7,1,0].includes(n)) events.push({key:`peremption_${today}_${n}`,
+    if ([30,7,1,0].includes(n)) events.push({type:'expiry',key:`peremption_${today}_${n}`,
       title:'Ma Pharmacie — péremption',
       body:n===0?`${m.name} arrive à péremption aujourd'hui.`:`${m.name} arrive à péremption dans ${n} jour(s).`});
   }
@@ -93,7 +93,7 @@ function stockEventForDevice(m,device,today,nowMinutes) {
   if (!slot) return null;
   const quantity = currentStock(m,slot.date);
   if (quantity > Number(m.threshold ?? 0)) return null;
-  return {key:`stock_${slot.date}`,title:'Ma Pharmacie — stock faible',
+  return {type:'stock',key:`stock_${slot.date}`,title:'Ma Pharmacie — stock faible',
     body:`Stock faible : ${m.name} (${quantity} restant(s)).`};
 }
 const makeId = s => crypto.createHash('sha256').update(s).digest('hex');
@@ -111,6 +111,13 @@ function errorDetails(e) {
   if (typeof body!=='string') {try{body=body?JSON.stringify(body):'';}catch{body=String(body||'');}}
   return {code:e?.code,status:e?.statusCode,message:e?.message,body:body||'(aucun détail)'};
 }
+function deviceCanReceiveReminder(device,medicine) {
+  const person = medicine.person || 'Famille';
+  const profile = device.devicePerson || '';
+  if (['Famille','Enzo','Lena'].includes(person)) return true;
+  return ['Jérémy','Melissa'].includes(profile) && person === profile;
+}
+
 async function sendNotification(device,medicine,event) {
   const subscription=device.subscription || {endpoint:device.endpoint,keys:device.keys};
   if (!subscription?.endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth) {
@@ -156,7 +163,11 @@ async function main() {
     const common=medicineEvents(medicine,today,nowMinutes);
     for (const device of devices) {
       const stock=stockEventForDevice(medicine,device,today,nowMinutes);
-      const events=stock?[...common,stock]:common;
+      // Seuls les rappels de prise personnels sont ciblés. Péremption et stock vont aux deux GSM.
+      const eligibleCommon=common.filter(event =>
+        event.type !== 'reminder' || deviceCanReceiveReminder(device,medicine)
+      );
+      const events=stock?[...eligibleCommon,stock]:eligibleCommon;
       for (const event of events) {
         stats.detected++;
         const result=await sendNotification(device,medicine,event);
