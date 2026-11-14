@@ -361,7 +361,7 @@ async function remove(id){
 }
 function googlePharmacyUrl(m){
  const rupture=depletionInfo(m);
- if(!rupture&&!isDiazepam(m))return"";
+ if(!rupture){ /* Médicament sans date calculable : rappel pharmacie manuel. */ }
 
  let eventDate;
  if(rupture){
@@ -388,10 +388,10 @@ function openPharmacyCalendar(id){
 }
 async function takeDiazepam(id,button){
  const m=meds.find(x=>x.id===id);
- if(!m||!isDiazepam(m)||!user)return;
+ if(!m||!user)return;
  const stock=currentStock(m);
  if(stock<=0){alert("Le stock de Diazepam est épuisé.");return;}
- if(!confirm("Confirmer la prise d'un comprimé de Diazepam ?"))return;
+ if(!confirm("Confirmer la prise d'une unité de "+(m.name||"ce médicament")+" ?"))return;
  if(button)button.disabled=true;
  try{
   const newStock=Math.max(0,stock-1);
@@ -428,13 +428,13 @@ function openMedicationFromLink(){const id=new URL(location.href).searchParams.g
 function render(){
  const q=$("search").value.toLowerCase(),shown=meds.filter(m=>(m.name+" "+m.dose+" "+m.person+" "+m.barcode).toLowerCase().includes(q));
  $("countAll").textContent=meds.length;$("countLow").textContent=meds.filter(m=>currentStock(m)<=+m.threshold).length;$("countExpiry").textContent=meds.filter(m=>m.expiry&&daysUntil(m.expiry)<=30).length;
- $("medicineList").innerHTML=shown.length?shown.map(m=>`<article class="card med">${(photoObjectUrls.get(m.id)||m.photoUrl)?`<img src="${esc(photoObjectUrls.get(m.id)||m.photoUrl)}" alt="Boîte de ${esc(m.name)}">`:"💊"}<div style="min-width:0;flex:1"><h3>${esc(m.name)}</h3><div class="muted">${esc(m.dose)} · ${esc(m.form)} · ${esc(m.person)}</div><span class="pill">Stock : ${currentStock(m)}</span>${currentStock(m)<=+m.threshold?'<span class="pill warn">Stock faible</span>':""}${m.expiry?`<span class="pill">Péremption : ${esc(m.expiry)}</span>`:""}${depletionInfo(m)?`<div class="muted">Consommation : ${dailyUse(m)} unité(s)/jour · Environ ${depletionInfo(m).days} jour(s) restant(s) · Rupture estimée : ${depletionInfo(m).date}</div>`:""}${m.reminderOn?`<div class="notice" style="margin:9px 0"><b>🔔 Rappel de prise : ${esc(m.reminderTime||"Heure non définie")}${m.reminderFreq==="Matin et soir"?" et "+esc(m.reminderEveningTime||"20:00"):""}</b><div class="muted">Géré par les notifications de Ma Pharmacie.</div></div>`:""}${depletionInfo(m)||isDiazepam(m)?`<button type="button" class="calendarBtn" data-pharmacy="${m.id}">📅 Aller chercher à la pharmacie</button>`:""}${isDiazepam(m)?`<button type="button" data-take="${m.id}" style="margin:5px 0">💊 J'en ai pris (−1)</button>`:""}<div class="row"><button class="secondary" data-edit="${m.id}">Modifier</button><button class="danger" data-del="${m.id}">Supprimer</button></div></div></article>`).join(""):'<div class="empty">Aucun médicament enregistré.</div>';
+ $("medicineList").innerHTML=shown.length?shown.map(m=>`<article class="card med">${(photoObjectUrls.get(m.id)||m.photoUrl)?`<img src="${esc(photoObjectUrls.get(m.id)||m.photoUrl)}" alt="Boîte de ${esc(m.name)}">`:"💊"}<div style="min-width:0;flex:1"><h3>${esc(m.name)}</h3><div class="muted">${esc(m.dose)} · ${esc(m.form)} · ${esc(m.person)}</div><span class="pill">Stock : ${currentStock(m)}</span>${currentStock(m)<=+m.threshold?'<span class="pill warn">Stock faible</span>':""}${m.expiry?`<span class="pill">Péremption : ${esc(m.expiry)}</span>`:""}${depletionInfo(m)?`<div class="muted">Consommation : ${dailyUse(m)} unité(s)/jour · Environ ${depletionInfo(m).days} jour(s) restant(s) · Rupture estimée : ${depletionInfo(m).date}</div>`:""}${m.reminderOn?`<div class="notice" style="margin:9px 0"><b>🔔 Rappel de prise : ${esc(m.reminderTime||"Heure non définie")}${m.reminderFreq==="Matin et soir"?" et "+esc(m.reminderEveningTime||"20:00"):""}</b><div class="muted">Géré par les notifications de Ma Pharmacie.</div></div>`:""}<button type="button" class="calendarBtn" data-pharmacy="${m.id}">📅 Aller chercher à la pharmacie</button><button type="button" data-take="${m.id}" style="margin:5px 0">💊 J'en ai pris (−1)</button><div class="row"><button class="secondary" data-edit="${m.id}">Modifier</button><button class="danger" data-del="${m.id}">Supprimer</button></div></div></article>`).join(""):'<div class="empty">Aucun médicament enregistré.</div>';
  document.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>edit(b.dataset.edit));
  document.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>remove(b.dataset.del));
  document.querySelectorAll("[data-pharmacy]").forEach(b=>b.onclick=()=>openPharmacyCalendar(b.dataset.pharmacy));
  document.querySelectorAll("[data-take]").forEach(b=>b.onclick=()=>takeDiazepam(b.dataset.take,b));
- const r=meds.filter(m=>m.reminderOn||(currentStock(m)<=+(m.threshold??0))||!!depletionInfo(m)||isDiazepam(m));
- $("reminderList").innerHTML=r.length?r.map(m=>{const rupture=depletionInfo(m);return`<div class="card"><b>${esc(m.name)}</b><div class="muted">Pour : <b>${esc(m.person||"Famille")}</b><br>${m.reminderOn?`Prise : ${esc(m.reminderTime||"Non définie")}${m.reminderFreq==="Matin et soir"?" et "+esc(m.reminderEveningTime||"20:00"):""} · notifications de l'application`:"Pas de rappel de prise activé"} · ${currentStock(m)<=+(m.threshold??0)?"Stock faible":"Stock suffisant"}${rupture?`<br>Rupture estimée : ${rupture.date} (dans ${rupture.days} jour(s))`:""}</div>${rupture||isDiazepam(m)?`<button type="button" class="calendarBtn" data-pharmacy="${m.id}">📅 Aller chercher à la pharmacie</button>`:""}</div>`;}).join(""):'<div class="empty">Aucun rappel actif.</div>';
+ const r=meds;
+ $("reminderList").innerHTML=r.length?r.map(m=>{const rupture=depletionInfo(m);return`<div class="card"><b>${esc(m.name)}</b><div class="muted">Pour : <b>${esc(m.person||"Famille")}</b><br>${m.reminderOn?`Prise : ${esc(m.reminderTime||"Non définie")}${m.reminderFreq==="Matin et soir"?" et "+esc(m.reminderEveningTime||"20:00"):""} · notifications de l'application`:"Pas de rappel de prise activé"} · ${currentStock(m)<=+(m.threshold??0)?"Stock faible":"Stock suffisant"}${rupture?`<br>Rupture estimée : ${rupture.date} (dans ${rupture.days} jour(s))`:""}</div><button type="button" class="calendarBtn" data-pharmacy="${m.id}">📅 Aller chercher à la pharmacie</button></div>`;}).join(""):'<div class="empty">Aucun rappel actif.</div>';
 }
 function dateParts(){return Object.fromEntries(new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Brussels",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(new Date()).map(x=>[x.type,x.value]));}
 function daysUntil(date){if(!date)return null;const[y,m,d]=date.split("-").map(Number),p=dateParts();return Math.round((Date.UTC(y,m-1,d)-Date.UTC(+p.year,+p.month-1,+p.day))/86400000);}
