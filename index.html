@@ -54,7 +54,7 @@ label{font-size:13px;font-weight:650;display:block}.grid{display:grid;grid-templ
 <div class="full"><label>Emplacement</label><input id="place" placeholder="Armoire salle de bain…"></div>
 <div class="full"><label>Code-barres</label><div class="row"><input id="barcode" placeholder="Code-barres"><button type="button" id="scanBtn" class="secondary">Scanner</button></div></div>
 <div class="full">
-<label>Photo de la boîte (facultatif, max. 500 Ko)</label>
+<label>Photo de la boîte (facultatif, sans limite de taille à la sélection)</label>
 <div class="photo-actions"><button type="button" id="takePhoto">📷 Prendre une photo</button><button type="button" id="choosePhoto" class="secondary">🖼️ Choisir dans la galerie</button></div>
 <input id="photoCamera" type="file" accept="image/*" capture="environment" hidden>
 <input id="photoGallery" type="file" accept="image/*" hidden>
@@ -147,16 +147,61 @@ function clearSelectedPhoto(){
  $("photoPreview").classList.add("hidden");$("photoPreviewImg").removeAttribute("src");$("photoSelected").textContent="";
  $("photoHelp").textContent="Prends une photo avec le GSM ou choisis une image déjà présente dans tes albums.";
 }
-function handlePhotoSelection(file){
+async function preparePhotoForSaving(file){
+ // Accepte les photos volumineuses du GSM puis les optimise automatiquement
+ // pour réduire le temps de synchronisation et l'espace utilisé.
+ try{
+  let bitmap;
+  if("createImageBitmap" in window) bitmap=await createImageBitmap(file);
+  else{
+   bitmap=await new Promise((resolve,reject)=>{
+    const image=new Image(),url=URL.createObjectURL(file);
+    image.onload=()=>{URL.revokeObjectURL(url);resolve(image);};
+    image.onerror=()=>{URL.revokeObjectURL(url);reject(new Error("Format photo non pris en charge par le navigateur."));};
+    image.src=url;
+   });
+  }
+  const maxSide=2200,scale=Math.min(1,maxSide/Math.max(bitmap.width,bitmap.height));
+  const canvas=document.createElement("canvas");
+  canvas.width=Math.max(1,Math.round(bitmap.width*scale));
+  canvas.height=Math.max(1,Math.round(bitmap.height*scale));
+  const context=canvas.getContext("2d");
+  context.drawImage(bitmap,0,0,canvas.width,canvas.height);
+  if(typeof bitmap.close==="function")bitmap.close();
+  const blob=await new Promise((resolve,reject)=>{
+   canvas.toBlob(result=>result?resolve(result):reject(new Error("Optimisation de la photo impossible.")),"image/jpeg",0.84);
+  });
+  return blob;
+ }catch(error){
+  console.warn("Optimisation photo indisponible, conservation de l'image originale :",error);
+  return file;
+ }
+}
+async function handlePhotoSelection(file){
  if(!file)return;
  if(!file.type||!file.type.startsWith("image/")){alert("Choisis un fichier image.");return;}
- if(file.size>512000){alert("Photo maximum : 500 Ko. Choisis une photo plus légère.");$("photoCamera").value="";$("photoGallery").value="";return;}
- selectedPhotoFile=file;
- if(selectedPhotoObjectUrl)URL.revokeObjectURL(selectedPhotoObjectUrl);
- selectedPhotoObjectUrl=URL.createObjectURL(file);
- $("photoPreviewImg").src=selectedPhotoObjectUrl;$("photoSelected").textContent=file.name||"Nouvelle photo sélectionnée";
- $("photoPreview").classList.remove("hidden");
- $("photoHelp").textContent="La photo sera enregistrée dans IndexedDB et synchronisée entre les téléphones via Firestore.";
+ $("photoHelp").textContent="Préparation de la photo…";
+ $("takePhoto").disabled=true;$("choosePhoto").disabled=true;
+ try{
+  const optimized=await preparePhotoForSaving(file);
+  selectedPhotoFile=optimized;
+  if(selectedPhotoObjectUrl)URL.revokeObjectURL(selectedPhotoObjectUrl);
+  selectedPhotoObjectUrl=URL.createObjectURL(optimized);
+  $("photoPreviewImg").src=selectedPhotoObjectUrl;
+  const originalMb=(file.size/1048576).toFixed(1);
+  const savedMb=(optimized.size/1048576).toFixed(1);
+  $("photoSelected").textContent=(file.name||"Photo du GSM")+" · "+savedMb+" Mo";
+  $("photoPreview").classList.remove("hidden");
+  $("photoHelp").textContent=optimized.size<file.size
+   ?"Photo optimisée automatiquement ("+originalMb+" Mo → "+savedMb+" Mo). Elle sera synchronisée entre les téléphones."
+   :"Photo sélectionnée ("+savedMb+" Mo). Elle sera synchronisée entre les téléphones.";
+ }catch(error){
+  console.error("Préparation photo impossible :",error);
+  alert("Impossible de préparer cette photo. Essaie une autre image.");
+  $("photoHelp").textContent="Prends une photo avec le GSM ou choisis une image déjà présente dans tes albums.";
+ }finally{
+  $("takePhoto").disabled=false;$("choosePhoto").disabled=false;
+ }
 }
 $("photoCamera").onchange=()=>handlePhotoSelection($("photoCamera").files[0]);
 $("photoGallery").onchange=()=>handlePhotoSelection($("photoGallery").files[0]);
@@ -276,7 +321,6 @@ $("medForm").onsubmit=async e=>{
   $("syncState").textContent=file?"Médicament enregistré — ajout de la photo…":"Médicament enregistré et synchronisé";
   if(file){
    try{
-    if(file.size>512000)throw new Error("La photo dépasse 500 Ko. Choisis une photo plus légère.");
     const photoFields=await savePhotoFirestore(id,file);
     await setDoc(medicationRef,{...photoFields,photoUrl:"",photoPath:"",updatedAt:serverTimestamp()},{merge:true});
     const cached=await getLocalPhoto(id);if(cached){const previous=photoObjectUrls.get(id);if(previous)URL.revokeObjectURL(previous);photoObjectUrls.set(id,URL.createObjectURL(cached));}
