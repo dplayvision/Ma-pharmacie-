@@ -31,6 +31,12 @@ label{font-size:13px;font-weight:650;display:block}.grid{display:grid;grid-templ
 <section id="login" class="card"><h2>Bienvenue</h2><p class="muted">Connectez-vous avec l'un des deux comptes Google autorisés.</p><button id="loginBtn" style="width:100%">Continuer avec Google</button><p id="loginMsg" class="muted"></p></section>
 <main id="app" class="hidden">
 <div class="row between"><div><b id="welcome">Pharmacie familiale</b><div class="muted" id="syncState">Connexion…</div></div><span class="pill">Partagée</span></div>
+<section class="card">
+ <label for="devicePerson">Qui utilise ce téléphone ?</label>
+ <select id="devicePerson"><option value="">— Choisir le profil de ce téléphone —</option><option value="Jérémy">Jérémy</option><option value="Melissa">Melissa</option></select>
+ <p class="muted">Choisis Jérémy sur ton GSM et Melissa sur le GSM de Melissa. Ce choix est enregistré séparément sur chaque téléphone.</p>
+ <div id="devicePersonState" class="muted">Profil de téléphone non configuré.</div>
+</section>
 <section class="card"><div class="row between"><div><b>Alertes sur ce téléphone</b><div id="pushState" class="muted">Notifications non activées</div></div><button id="enablePush">Autoriser</button></div><p class="muted">Sur iPhone, ajoute d'abord Ma Pharmacie à l'écran d'accueil et ouvre son icône. Autorise les notifications pour recevoir les alertes même lorsque l'application est fermée. Le service GitHub vérifie les rappels périodiquement.</p></section>
 <div id="alerts"></div>
 <div class="stats"><div class="stat"><b id="countAll">0</b><span class="muted">Médicaments</span></div><div class="stat"><b id="countLow">0</b><span class="muted">Stocks faibles</span></div><div class="stat"><b id="countExpiry">0</b><span class="muted">À surveiller</span></div></div>
@@ -75,7 +81,7 @@ import{getFirestore,collection,doc,setDoc,getDoc,getDocs,deleteDoc,onSnapshot,se
 const config={apiKey:"AIzaSyD8FfX9uljCWJi1fg3hE5poocXOCAH-H9A",authDomain:"mes-paiements-jeremy.firebaseapp.com",projectId:"mes-paiements-jeremy",storageBucket:"mes-paiements-jeremy.firebasestorage.app",messagingSenderId:"1085958529684",appId:"1:1085958529684:web:99e5514798cf0b8f098a81"};
 const allowed=["duchenejerem@gmail.com","melissasemiglazoff@gmail.com"],fb=initializeApp(config),auth=getAuth(fb),db=getFirestore(fb),provider=new GoogleAuthProvider();
 provider.setCustomParameters({prompt:"select_account"});
-let user=null,meds=[],unsub=null,alertTimer=null,selectedPhotoFile=null,selectedPhotoObjectUrl=null,existingPhotoObjectUrl=null;
+let user=null,meds=[],unsub=null,alertTimer=null,selectedPhotoFile=null,selectedPhotoObjectUrl=null,existingPhotoObjectUrl=null,devicePerson=localStorage.getItem("maPharmacieDevicePerson")||"";
 const photoObjectUrls=new Map();
 const $=id=>document.getElementById(id),medRef=()=>collection(db,"pharmacieFamiliale","inventaire","medicaments");
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -85,6 +91,7 @@ async function enableBackgroundPush(){
  if(!("serviceWorker"in navigator)||!("PushManager"in window))throw new Error("Les notifications en arrière-plan ne sont pas prises en charge.");
  if(!("Notification"in window))throw new Error("Les notifications ne sont pas prises en charge.");
  if(!user||!user.email)throw new Error("Connectez-vous avant d'activer les notifications.");
+ if(!["Jérémy","Melissa"].includes(devicePerson))throw new Error("Choisis d'abord qui utilise ce téléphone : Jérémy ou Melissa.");
  if(Notification.permission!=="granted"){const permission=await Notification.requestPermission();if(permission!=="granted")throw new Error("Autorisation des notifications refusée.");}
  const registration=await navigator.serviceWorker.register("./sw.js");await navigator.serviceWorker.ready;
  const applicationServerKey=urlBase64ToUint8Array(VAPID_PUBLIC_KEY);let subscription=await registration.pushManager.getSubscription();
@@ -92,9 +99,36 @@ async function enableBackgroundPush(){
  if(!subscription)subscription=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey});
  let deviceId=localStorage.getItem("maPharmaciePushDeviceId");if(!deviceId){deviceId=crypto.randomUUID?crypto.randomUUID():"device-"+Date.now()+"-"+Math.random().toString(16).slice(2);localStorage.setItem("maPharmaciePushDeviceId",deviceId);}
  const subscriptionData=subscription.toJSON();
- await setDoc(doc(db,"pharmacieFamiliale","inventaire","notificationDevices",deviceId),{subscription:subscriptionData,endpoint:subscriptionData.endpoint||"",keys:subscriptionData.keys||{},ownerEmail:user.email,deviceLabel:"Téléphone",platform:"web-push",updatedAt:serverTimestamp()},{merge:true});
+ await setDoc(doc(db,"pharmacieFamiliale","inventaire","notificationDevices",deviceId),{subscription:subscriptionData,endpoint:subscriptionData.endpoint||"",keys:subscriptionData.keys||{},ownerEmail:user.email,devicePerson,deviceLabel:"Téléphone",platform:"web-push",updatedAt:serverTimestamp()},{merge:true});
  return registration;
 }
+$("devicePerson").value=devicePerson;
+function updateDevicePersonState(){
+ $("devicePersonState").textContent=devicePerson
+  ? "Ce téléphone est configuré pour : "+devicePerson+"."
+  : "Profil de téléphone non configuré.";
+}
+updateDevicePersonState();
+$("devicePerson").onchange=async()=>{
+ const selected=$("devicePerson").value;
+ if(!["Jérémy","Melissa"].includes(selected)){devicePerson="";localStorage.removeItem("maPharmacieDevicePerson");updateDevicePersonState();return;}
+ devicePerson=selected;
+ localStorage.setItem("maPharmacieDevicePerson",devicePerson);
+ updateDevicePersonState();
+ const deviceId=localStorage.getItem("maPharmaciePushDeviceId");
+ if(user&&deviceId){
+  try{
+   await setDoc(doc(db,"pharmacieFamiliale","inventaire","notificationDevices",deviceId),{
+    ownerEmail:user.email,devicePerson,deviceLabel:"Téléphone",platform:"web-push",updatedAt:serverTimestamp()
+   },{merge:true});
+   $("pushState").textContent="Profil enregistré sur cet appareil.";
+  }catch(error){
+   console.error("Mise à jour du profil de téléphone impossible :",error);
+   alert("Le profil est enregistré sur ce téléphone, mais sa synchronisation a échoué : "+(error.message||error));
+  }
+ }
+ checkAlerts();
+};
 function tab(t){["list","add","reminders"].forEach(x=>$("tab-"+x).classList.toggle("hidden",x!==t));document.querySelectorAll("[data-tab]").forEach(b=>b.classList.toggle("active",b.dataset.tab===t));}
 document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>tab(b.dataset.tab));
 $("newMed").onclick=()=>{reset();tab("add");};$("cancelEdit").onclick=()=>{reset();tab("list");};$("search").oninput=render;
@@ -128,14 +162,8 @@ $("photoCamera").onchange=()=>handlePhotoSelection($("photoCamera").files[0]);
 $("photoGallery").onchange=()=>handlePhotoSelection($("photoGallery").files[0]);
 $("removeSelectedPhoto").onclick=clearSelectedPhoto;
 
-// Diazepam est suivi manuellement : aucune déduction quotidienne automatique.
-function isDiazepam(m){return String(m?.name||"").toLowerCase().includes("diazepam");}
-
 // Stock quotidien et date de rupture.
-function dailyUse(m){
- if(isDiazepam(m))return 0;
- return(Number(m.doseMorning)||0)+(Number(m.doseNoon)||0)+(Number(m.doseEvening)||0);
-}
+function dailyUse(m){return(Number(m.doseMorning)||0)+(Number(m.doseNoon)||0)+(Number(m.doseEvening)||0);}
 function todayISO(){const p=dateParts();return`${p.year}-${p.month}-${p.day}`;}
 function elapsedStockDays(start){if(!start)return 0;const[y,mo,d]=start.split("-").map(Number),[cy,cm,cd]=todayISO().split("-").map(Number);return Math.max(0,Math.floor((Date.UTC(cy,cm-1,cd)-Date.UTC(y,mo-1,d))/86400000));}
 function currentStock(m){const base=Number(m.stockBaseQuantity??m.quantity)||0;return Math.max(0,base-elapsedStockDays(m.stockUpdatedDate)*dailyUse(m));}
@@ -281,25 +309,12 @@ async function remove(id){
  await deleteLocalPhoto(id).catch(()=>{});
 }
 function googlePharmacyUrl(m){
- const rupture=depletionInfo(m);
- if(!rupture&&!isDiazepam(m))return"";
-
- let eventDate;
- if(rupture){
-  const[y,mo,d]=rupture.dateISO.split("-").map(Number);
-  eventDate=new Date(y,mo-1,d,9,0,0);
-  eventDate.setDate(eventDate.getDate()-14);
-  const today=new Date();today.setHours(0,0,0,0);
-  if(eventDate<today)eventDate.setTime(today.getTime());
- }else{
-  // Pour le Diazepam, pas de date de rupture calculable : proposer demain à 9 h.
-  eventDate=new Date();eventDate.setHours(9,0,0,0);
-  if(eventDate<=new Date())eventDate.setDate(eventDate.getDate()+1);
- }
+ const rupture=depletionInfo(m);if(!rupture)return"";
+ const[y,mo,d]=rupture.dateISO.split("-").map(Number),eventDate=new Date(y,mo-1,d,9,0,0);
+ eventDate.setDate(eventDate.getDate()-14);const today=new Date();today.setHours(0,0,0,0);if(eventDate<today)eventDate.setTime(today.getTime());
  const endDate=new Date(eventDate.getTime()+30*60000);
  const fmt=x=>x.getFullYear()+String(x.getMonth()+1).padStart(2,"0")+String(x.getDate()).padStart(2,"0")+"T"+String(x.getHours()).padStart(2,"0")+String(x.getMinutes()).padStart(2,"0")+"00";
- const details=`Pensez à renouveler le stock.\\nMédicament : ${m.name||""}\\nDosage : ${m.dose||"Non précisé"}\\nPour : ${m.person||"Famille"}${rupture?`\\nRupture estimée : ${rupture.date}`:"\\nPrise occasionnelle : vérifier le stock."}`;
- const params=new URLSearchParams({action:"TEMPLATE",text:`💊 Aller chercher ${m.name||"le médicament"} à la pharmacie`,dates:`${fmt(eventDate)}/${fmt(endDate)}`,details,ctz:"Europe/Brussels"});
+ const params=new URLSearchParams({action:"TEMPLATE",text:`💊 Aller chercher ${m.name||"le médicament"} à la pharmacie`,dates:`${fmt(eventDate)}/${fmt(endDate)}`,details:`Pensez à renouveler le stock.\nMédicament : ${m.name||""}\nDosage : ${m.dose||"Non précisé"}\nPour : ${m.person||"Famille"}\nRupture estimée : ${rupture.date}`,ctz:"Europe/Brussels"});
  return"https://calendar.google.com/calendar/render?"+params.toString();
 }
 function openPharmacyCalendar(id){
@@ -307,41 +322,12 @@ function openPharmacyCalendar(id){
  if(!url){alert("Renseigne la consommation quotidienne (matin, midi ou soir) pour calculer la date de renouvellement.");return;}
  window.open(url,"_blank");localStorage.setItem("maPharmacieAgendaPharmacie_"+m.id,new Date().toISOString());render();
 }
-// Déduction manuelle réservée au Diazepam : un clic retire un comprimé.
-async function takeDiazepam(id,button){
- const m=meds.find(x=>x.id===id);
- if(!m||!isDiazepam(m)||!user)return;
- const stock=currentStock(m);
- if(stock<=0){alert("Le stock de Diazepam est épuisé.");return;}
- if(!confirm("Confirmer la prise d'un comprimé de Diazepam ?"))return;
- if(button)button.disabled=true;
- try{
-  const newStock=Math.max(0,stock-1);
-  await setDoc(doc(db,"pharmacieFamiliale","inventaire","medicaments",id),{
-   quantity:newStock,
-   stockBaseQuantity:newStock,
-   stockUpdatedDate:todayISO(),
-   updatedAt:serverTimestamp(),
-   updatedBy:user.email
-  },{merge:true});
-  // Mettre à jour immédiatement l'écran ; Firestore synchronise les autres téléphones.
-  Object.assign(m,{quantity:newStock,stockBaseQuantity:newStock,stockUpdatedDate:todayISO()});
-  if(!$("medDetails").classList.contains("hidden"))showMedicationDetails(id);
-  else render();
- }catch(e){
-  alert("Impossible de mettre à jour le stock : "+(e.message||e));
-  if(button)button.disabled=false;
- }
-}
-
 function showMedicationDetails(id){
  const m=meds.find(x=>x.id===id);if(!m){alert("Ce médicament n'a pas été retrouvé.");return;}
  tab("list");const stock=currentStock(m),rupture=depletionInfo(m);
  $("detailTitle").textContent=m.name||"Fiche médicament";
- $("detailContent").innerHTML=`<div class="med" style="align-items:flex-start">${(photoObjectUrls.get(m.id)||m.photoUrl)?`<img src="${esc(photoObjectUrls.get(m.id)||m.photoUrl)}" alt="Boîte de ${esc(m.name)}" style="width:100px;height:100px">`:'<div style="font-size:42px">💊</div>'}<div><b>${esc(m.name)}</b><div class="muted">${esc(m.dose||"Dosage non précisé")} · ${esc(m.form||"")}</div><div class="muted">Pour : ${esc(m.person||"Famille")}</div></div></div><p><b>Stock restant :</b> ${stock}</p><p><b>Consommation :</b> ${isDiazepam(m)?"Prise occasionnelle — déduction manuelle":dailyUse(m)+" unité(s)/jour"}</p>${rupture?`<p><b>Rupture estimée :</b> dans ${rupture.days} jour(s), le ${rupture.date}</p>`:""}${m.expiry?`<p><b>Péremption :</b> ${esc(m.expiry)}</p>`:""}${m.place?`<p><b>Emplacement :</b> ${esc(m.place)}</p>`:""}${m.notes?`<p><b>Notes :</b> ${esc(m.notes)}</p>`:""}<div class="row">${isDiazepam(m)?'<button type="button" id="detailTake">💊 J\'en ai pris (−1)</button>':""}<button type="button" class="secondary" id="detailEdit">Modifier</button></div>`;
- $("medDetails").classList.remove("hidden");
- if(isDiazepam(m))$("detailTake").onclick=e=>takeDiazepam(id,e.currentTarget);
- $("detailEdit").onclick=()=>{$("medDetails").classList.add("hidden");edit(id);};
+ $("detailContent").innerHTML=`<div class="med" style="align-items:flex-start">${(photoObjectUrls.get(m.id)||m.photoUrl)?`<img src="${esc(photoObjectUrls.get(m.id)||m.photoUrl)}" alt="Boîte de ${esc(m.name)}" style="width:100px;height:100px">`:'<div style="font-size:42px">💊</div>'}<div><b>${esc(m.name)}</b><div class="muted">${esc(m.dose||"Dosage non précisé")} · ${esc(m.form||"")}</div><div class="muted">Pour : ${esc(m.person||"Famille")}</div></div></div><p><b>Stock restant :</b> ${stock}</p><p><b>Consommation :</b> ${dailyUse(m)} unité(s)/jour</p>${rupture?`<p><b>Rupture estimée :</b> dans ${rupture.days} jour(s), le ${rupture.date}</p>`:""}${m.expiry?`<p><b>Péremption :</b> ${esc(m.expiry)}</p>`:""}${m.place?`<p><b>Emplacement :</b> ${esc(m.place)}</p>`:""}${m.notes?`<p><b>Notes :</b> ${esc(m.notes)}</p>`:""}<div class="row"><button type="button" class="secondary" id="detailEdit">Modifier</button></div>`;
+ $("medDetails").classList.remove("hidden");$("detailEdit").onclick=()=>{$("medDetails").classList.add("hidden");edit(id);};
  $("medDetails").scrollIntoView({behavior:"smooth",block:"start"});
  const url=new URL(location.href);url.searchParams.delete("openMed");history.replaceState({},"",url.pathname+url.search+url.hash);
 }
@@ -350,13 +336,12 @@ function openMedicationFromLink(){const id=new URL(location.href).searchParams.g
 function render(){
  const q=$("search").value.toLowerCase(),shown=meds.filter(m=>(m.name+" "+m.dose+" "+m.person+" "+m.barcode).toLowerCase().includes(q));
  $("countAll").textContent=meds.length;$("countLow").textContent=meds.filter(m=>currentStock(m)<=+m.threshold).length;$("countExpiry").textContent=meds.filter(m=>m.expiry&&daysUntil(m.expiry)<=30).length;
- $("medicineList").innerHTML=shown.length?shown.map(m=>`<article class="card med">${(photoObjectUrls.get(m.id)||m.photoUrl)?`<img src="${esc(photoObjectUrls.get(m.id)||m.photoUrl)}" alt="Boîte de ${esc(m.name)}">`:"💊"}<div style="min-width:0;flex:1"><h3>${esc(m.name)}</h3><div class="muted">${esc(m.dose)} · ${esc(m.form)} · ${esc(m.person)}</div><span class="pill">Stock : ${currentStock(m)}</span>${currentStock(m)<=+m.threshold?'<span class="pill warn">Stock faible</span>':""}${m.expiry?`<span class="pill">Péremption : ${esc(m.expiry)}</span>`:""}${depletionInfo(m)?`<div class="muted">Consommation : ${dailyUse(m)} unité(s)/jour · Environ ${depletionInfo(m).days} jour(s) restant(s) · Rupture estimée : ${depletionInfo(m).date}</div>`:""}${m.reminderOn?`<div class="notice" style="margin:9px 0"><b>🔔 Rappel de prise : ${esc(m.reminderTime||"Heure non définie")}${m.reminderFreq==="Matin et soir"?" et "+esc(m.reminderEveningTime||"20:00"):""}</b><div class="muted">Géré par les notifications de Ma Pharmacie.</div></div>`:""}${depletionInfo(m)||isDiazepam(m)?`<button type="button" class="calendarBtn" data-pharmacy="${m.id}">📅 Aller chercher à la pharmacie</button>`:""}${isDiazepam(m)?`<button type="button" data-take="${m.id}" style="margin:5px 0">💊 J'en ai pris (−1)</button>`:""}<div class="row"><button class="secondary" data-edit="${m.id}">Modifier</button><button class="danger" data-del="${m.id}">Supprimer</button></div></div></article>`).join(""):'<div class="empty">Aucun médicament enregistré.</div>';
+ $("medicineList").innerHTML=shown.length?shown.map(m=>`<article class="card med">${(photoObjectUrls.get(m.id)||m.photoUrl)?`<img src="${esc(photoObjectUrls.get(m.id)||m.photoUrl)}" alt="Boîte de ${esc(m.name)}">`:"💊"}<div style="min-width:0;flex:1"><h3>${esc(m.name)}</h3><div class="muted">${esc(m.dose)} · ${esc(m.form)} · ${esc(m.person)}</div><span class="pill">Stock : ${currentStock(m)}</span>${currentStock(m)<=+m.threshold?'<span class="pill warn">Stock faible</span>':""}${m.expiry?`<span class="pill">Péremption : ${esc(m.expiry)}</span>`:""}${depletionInfo(m)?`<div class="muted">Consommation : ${dailyUse(m)} unité(s)/jour · Environ ${depletionInfo(m).days} jour(s) restant(s) · Rupture estimée : ${depletionInfo(m).date}</div>`:""}${m.reminderOn?`<div class="notice" style="margin:9px 0"><b>🔔 Rappel de prise : ${esc(m.reminderTime||"Heure non définie")}${m.reminderFreq==="Matin et soir"?" et "+esc(m.reminderEveningTime||"20:00"):""}</b><div class="muted">Géré par les notifications de Ma Pharmacie.</div></div>`:""}${depletionInfo(m)?`<button type="button" class="calendarBtn" data-pharmacy="${m.id}">📅 Aller chercher à la pharmacie</button>`:""}<div class="row"><button class="secondary" data-edit="${m.id}">Modifier</button><button class="danger" data-del="${m.id}">Supprimer</button></div></div></article>`).join(""):'<div class="empty">Aucun médicament enregistré.</div>';
  document.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>edit(b.dataset.edit));
  document.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>remove(b.dataset.del));
  document.querySelectorAll("[data-pharmacy]").forEach(b=>b.onclick=()=>openPharmacyCalendar(b.dataset.pharmacy));
- document.querySelectorAll("[data-take]").forEach(b=>b.onclick=()=>takeDiazepam(b.dataset.take,b));
- const r=meds.filter(m=>m.reminderOn||(currentStock(m)<=+(m.threshold??0))||!!depletionInfo(m)||isDiazepam(m));
- $("reminderList").innerHTML=r.length?r.map(m=>{const rupture=depletionInfo(m);return`<div class="card"><b>${esc(m.name)}</b><div class="muted">Pour : <b>${esc(m.person||"Famille")}</b><br>${m.reminderOn?`Prise : ${esc(m.reminderTime||"Non définie")}${m.reminderFreq==="Matin et soir"?" et "+esc(m.reminderEveningTime||"20:00"):""} · notifications de l'application`:"Pas de rappel de prise activé"} · ${currentStock(m)<=+(m.threshold??0)?"Stock faible":"Stock suffisant"}${rupture?`<br>Rupture estimée : ${rupture.date} (dans ${rupture.days} jour(s))`:""}</div>${rupture||isDiazepam(m)?`<button type="button" class="calendarBtn" data-pharmacy="${m.id}">📅 Aller chercher à la pharmacie</button>`:""}</div>`;}).join(""):'<div class="empty">Aucun rappel actif.</div>';
+ const r=meds.filter(m=>m.reminderOn||(currentStock(m)<=+(m.threshold??0))||!!depletionInfo(m));
+ $("reminderList").innerHTML=r.length?r.map(m=>{const rupture=depletionInfo(m);return`<div class="card"><b>${esc(m.name)}</b><div class="muted">Pour : <b>${esc(m.person||"Famille")}</b><br>${m.reminderOn?`Prise : ${esc(m.reminderTime||"Non définie")}${m.reminderFreq==="Matin et soir"?" et "+esc(m.reminderEveningTime||"20:00"):""} · notifications de l'application`:"Pas de rappel de prise activé"} · ${currentStock(m)<=+(m.threshold??0)?"Stock faible":"Stock suffisant"}${rupture?`<br>Rupture estimée : ${rupture.date} (dans ${rupture.days} jour(s))`:""}</div>${rupture?`<button type="button" class="calendarBtn" data-pharmacy="${m.id}">📅 Aller chercher à la pharmacie</button>`:""}</div>`;}).join(""):'<div class="empty">Aucun rappel actif.</div>';
 }
 function dateParts(){return Object.fromEntries(new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Brussels",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(new Date()).map(x=>[x.type,x.value]));}
 function daysUntil(date){if(!date)return null;const[y,m,d]=date.split("-").map(Number),p=dateParts();return Math.round((Date.UTC(y,m-1,d)-Date.UTC(+p.year,+p.month-1,+p.day))/86400000);}
@@ -370,7 +355,12 @@ function displayAlert(title,body,medicationId){
 function checkAlerts(){
  if(!user||!meds.length)return;const p=dateParts(),date=`${p.year}-${p.month}-${p.day}`,clock=`${p.hour}:${p.minute}`;
  for(const m of meds){
-  if(m.reminderOn&&(!m.reminderStartDate||date>=m.reminderStartDate)&&(!m.reminderEndDate||date<=m.reminderEndDate)){
+  const person=m.person||"Famille";
+  // Seuls les rappels de prise personnels sont filtrés par le profil du téléphone.
+  // Les alertes de stock, de renouvellement et de péremption restent visibles sur les deux GSM.
+  const sharedPerson=["Famille","Enzo","Lena"].includes(person);
+  const canReceiveReminder=sharedPerson||(["Jérémy","Melissa"].includes(devicePerson)&&person===devicePerson);
+  if(canReceiveReminder&&m.reminderOn&&(!m.reminderStartDate||date>=m.reminderStartDate)&&(!m.reminderEndDate||date<=m.reminderEndDate)){
    const times=[m.reminderTime].filter(Boolean);if(m.reminderFreq==="Matin et soir")times.push(m.reminderEveningTime||"20:00");
    const k=`prise_${m.id}_${date}_${clock}`;if(times.includes(clock)&&!wasShown(k)){displayAlert("Ma Pharmacie — rappel de prise",`${m.name||"Médicament"}${m.dose?" · "+m.dose:""} — ${m.person||"Famille"}`,m.id);markShown(k);}
   }
@@ -389,7 +379,7 @@ onAuthStateChanged(auth,u=>{
  if(unsub){unsub();unsub=null;}if(alertTimer){clearInterval(alertTimer);alertTimer=null;}
  if(!u){user=null;$("login").classList.remove("hidden");$("app").classList.add("hidden");$("logout").classList.add("hidden");return;}
  if(!allowed.includes((u.email||"").toLowerCase())){signOut(auth);$("loginMsg").textContent="Compte non autorisé.";return;}
- user=u;$("login").classList.add("hidden");$("app").classList.remove("hidden");$("logout").classList.remove("hidden");$("welcome").textContent="Bonjour "+(u.displayName||u.email);
+ user=u;$("login").classList.add("hidden");$("app").classList.remove("hidden");$("logout").classList.remove("hidden");$("welcome").textContent="Bonjour "+(u.displayName||u.email);$("devicePerson").value=devicePerson;updateDevicePersonState();
  $("pushState").textContent=("Notification"in window&&Notification.permission==="granted")?"Autorisation accordée sur ce téléphone":"Autorisation non activée";
  unsub=onSnapshot(query(medRef(),orderBy("name")),async s=>{meds=s.docs.map(d=>({id:d.id,...d.data()}));$("syncState").textContent="Synchronisé";render();await Promise.all(meds.map(cachePhoto));render();checkAlerts();openMedicationFromLink();},e=>{$("syncState").textContent="Erreur Firebase : "+e.message;console.error(e);});
  alertTimer=setInterval(checkAlerts,30000);
