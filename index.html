@@ -41,7 +41,18 @@ label{font-size:13px;font-weight:650;display:block}.grid{display:grid;grid-templ
 <div id="alerts"></div>
 <div class="stats"><div class="stat"><b id="countAll">0</b><span class="muted">Médicaments</span></div><div class="stat"><b id="countLow">0</b><span class="muted">Stocks faibles</span></div><div class="stat"><b id="countExpiry">0</b><span class="muted">À surveiller</span></div></div>
 <div class="tabs"><button class="active" data-tab="list">Ma pharmacie</button><button data-tab="add">Ajouter</button><button data-tab="reminders">Rappels</button></div>
-<section id="tab-list"><input id="search" placeholder="🔎 Rechercher un médicament…"><div class="row between"><b>Inventaire</b><button id="newMed" class="secondary">＋ Ajouter</button></div><div id="medicineList"></div></section>
+<section id="tab-list"><input id="search" placeholder="🔎 Rechercher un médicament…"><div class="row between"><b>Inventaire</b><button id="newMed" class="secondary">＋ Ajouter</button></div>
+<div class="card" style="margin:10px 0;background:#f8fbf9">
+ <b>💾 Sauvegarde de Ma Pharmacie</b>
+ <p class="muted">Enregistre tous tes médicaments et leurs photos dans un fichier, ou restaure une sauvegarde sur ce téléphone.</p>
+ <div class="photo-actions">
+  <button type="button" id="exportBackup">💾 Sauvegarder</button>
+  <button type="button" id="importBackup" class="secondary">📥 Importer</button>
+ </div>
+ <input type="file" id="backupFile" accept=".json,application/json" hidden>
+ <div id="backupStatus" class="muted" aria-live="polite"></div>
+</div>
+<div id="medicineList"></div></section>
 <section id="tab-add" class="hidden card">
 <h2 id="formTitle">Ajouter un médicament</h2>
 <form id="medForm"><input type="hidden" id="medId"><div class="grid">
@@ -285,6 +296,81 @@ async function deletePhotoFirestore(id){
  const batch=writeBatch(db);chunks.forEach(d=>batch.delete(d.ref));batch.delete(photoRef);await batch.commit();
  const oldUrl=photoObjectUrls.get(id);if(oldUrl)URL.revokeObjectURL(oldUrl);photoObjectUrls.delete(id);
 }
+
+// Sauvegarde complète : médicaments + photos, sans modifier les données Firebase.
+async function exportPharmacyBackup(){
+ if(!user)throw new Error("Connecte-toi avant de créer une sauvegarde.");
+ const status=$("backupStatus");
+ status.textContent="Préparation de la sauvegarde et des photos…";
+ const records=[];
+ for(let i=0;i<meds.length;i++){
+  const m=meds[i],record={...m};
+  let blob=null;
+  if(m.photoStored||m.photoId){
+   blob=await getLocalPhoto(m.id).catch(()=>null);
+   if(!blob)blob=await readPhotoFirestore(m.id);
+  }
+  if(blob){
+   record.backupPhotoBase64=await blobToBase64(blob);
+   record.backupPhotoType=blob.type||m.photoType||"image/jpeg";
+  }
+  records.push(record);
+  status.textContent=`Préparation : ${i+1}/${meds.length} médicament(s)…`;
+ }
+ const backup={app:"Ma Pharmacie",backupVersion:1,exportedAt:new Date().toISOString(),medicationCount:records.length,medications:records};
+ const blob=new Blob([JSON.stringify(backup)],{type:"application/json;charset=utf-8"});
+ const url=URL.createObjectURL(blob),a=document.createElement("a");
+ const date=new Date().toISOString().slice(0,10);
+ a.href=url;a.download=`ma-pharmacie-sauvegarde-${date}.json`;
+ document.body.appendChild(a);a.click();a.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),30000);
+ status.textContent=`Sauvegarde créée : ${records.length} médicament(s), avec les photos disponibles.`;
+}
+async function importPharmacyBackup(file){
+ if(!user)throw new Error("Connecte-toi avant d'importer une sauvegarde.");
+ if(!file) return;
+ const status=$("backupStatus");
+ const backup=JSON.parse(await file.text());
+ if(!backup||backup.app!=="Ma Pharmacie"||!Array.isArray(backup.medications))
+  throw new Error("Ce fichier ne ressemble pas à une sauvegarde Ma Pharmacie valide.");
+ if(!confirm(`Importer ${backup.medications.length} médicament(s) ? Les médicaments ayant le même identifiant seront mis à jour. Les autres seront ajoutés. Rien ne sera supprimé.`))return;
+ let done=0,photoCount=0;
+ for(const source of backup.medications){
+  if(!source||typeof source!=="object"||!source.id||typeof source.id!=="string")
+   throw new Error("Une fiche du fichier est invalide (identifiant manquant).");
+  const record={...source};
+  const photoBase64=record.backupPhotoBase64;
+  const photoType=record.backupPhotoType||record.photoType||"image/jpeg";
+  delete record.backupPhotoBase64;delete record.backupPhotoType;
+  delete record.id;
+  // Les champs de suivi de création/mise à jour et les autres informations sont conservés.
+  await setDoc(doc(db,"pharmacieFamiliale","inventaire","medicaments",source.id),record,{merge:true});
+  if(photoBase64){
+   const photoBlob=base64ToBlob(photoBase64,photoType);
+   const photoFields=await savePhotoFirestore(source.id,photoBlob);
+   await setDoc(doc(db,"pharmacieFamiliale","inventaire","medicaments",source.id),{
+    ...photoFields,photoUrl:"",photoPath:"",updatedAt:serverTimestamp()
+   },{merge:true});
+   photoCount++;
+  }
+  done++;
+  status.textContent=`Importation : ${done}/${backup.medications.length} médicament(s)…`;
+ }
+ status.textContent=`Importation terminée : ${done} médicament(s), ${photoCount} photo(s) restaurée(s).`;
+}
+$("exportBackup").onclick=async()=>{
+ const b=$("exportBackup");b.disabled=true;
+ try{await exportPharmacyBackup();}
+ catch(e){console.error("Sauvegarde impossible :",e);$("backupStatus").textContent="Erreur de sauvegarde : "+(e.message||e);alert("Sauvegarde impossible : "+(e.message||e));}
+ finally{b.disabled=false;}
+};
+$("importBackup").onclick=()=>$("backupFile").click();
+$("backupFile").onchange=async()=>{
+ const input=$("backupFile"),b=$("importBackup");b.disabled=true;
+ try{await importPharmacyBackup(input.files[0]);}
+ catch(e){console.error("Importation impossible :",e);$("backupStatus").textContent="Erreur d'importation : "+(e.message||e);alert("Importation impossible : "+(e.message||e));}
+ finally{b.disabled=false;input.value="";}
+};
 
 function reset(){
  $("medForm").reset();$("medId").value="";$("quantity").value=1;$("threshold").value=3;
