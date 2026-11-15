@@ -228,7 +228,12 @@ function elapsedStockDays(start){if(!start)return 0;const[y,mo,d]=start.split("-
 function currentStock(m){
  if(Number(m.stockModelVersion)>=2)return Math.max(0,Number(m.quantity)||0);
  const base=Number(m.stockBaseQuantity??m.quantity)||0;
- return Math.max(0,base-elapsedStockDays(m.stockUpdatedDate)*dailyUse(m));
+ const start=m.reminderStartDate||todayISO();
+ if(todayISO()<start)return Math.max(0,base);
+ const dayBeforeStart=new Date(start+"T12:00:00");dayBeforeStart.setDate(dayBeforeStart.getDate()-1);
+ const dayBeforeISO=`${dayBeforeStart.getFullYear()}-${String(dayBeforeStart.getMonth()+1).padStart(2,"0")}-${String(dayBeforeStart.getDate()).padStart(2,"0")}`;
+ const effectiveFrom=m.stockUpdatedDate&&m.stockUpdatedDate>dayBeforeISO?m.stockUpdatedDate:dayBeforeISO;
+ return Math.max(0,base-Math.max(0,elapsedStockDays(effectiveFrom))*dailyUse(m));
 }
 function depletionInfo(m){const perDay=dailyUse(m),stock=currentStock(m);if(perDay<=0)return null;const days=Math.ceil(stock/perDay),d=new Date();d.setHours(12,0,0,0);d.setDate(d.getDate()+days);const dateISO=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;return{days,date:d.toLocaleDateString("fr-BE"),dateISO};}
 
