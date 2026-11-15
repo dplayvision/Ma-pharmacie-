@@ -58,11 +58,66 @@ function dueSlot(time, today, nowMinutes, catchup) {
 function dailyUse(m) {
   return (Number(m.doseMorning)||0)+(Number(m.doseNoon)||0)+(Number(m.doseEvening)||0);
 }
-function currentStock(m, today) {
-  const base = Number(m.stockBaseQuantity ?? m.quantity) || 0;
-  const elapsed = m.stockUpdatedDate ? Math.max(0,-(daysUntil(m.stockUpdatedDate,today) ?? 0)) : 0;
-  return Math.max(0,base-elapsed*dailyUse(m));
+function currentStock(m) {
+  return Math.max(0, Number(m.quantity)||0);
 }
+
+// Migre l'ancien stock calculé virtuellement vers quantity, puis déduit réellement
+// une fois par jour. La transaction empêche les doubles déductions si le workflow
+// GitHub Actions se lance deux fois en parallèle.
+async function migrateOrDeductDailyStock(medicineRef, today) {
+  return db.runTransaction(async tx => {
+    const snap = await tx.get(medicineRef);
+    if (!snap.exists) return null;
+    const m = snap.data();
+    const use = dailyUse(m);
+
+    if (m.stockModelVersion == null || Number(m.stockModelVersion) < 2) {
+      let migratedQuantity = Number(m.quantity)||0;
+      if (use > 0) {
+        const baseQuantity = Number(m.stockBaseQuantity ?? m.quantity)||0;
+        const elapsed = m.stockUpdatedDate
+          ? Math.max(0, -(daysUntil(m.stockUpdatedDate, today) ?? 0))
+          : 0;
+        migratedQuantity = Math.max(0, baseQuantity - elapsed * use);
+      }
+      const patch = {
+        quantity: migratedQuantity,
+        stockBaseQuantity: migratedQuantity,
+        stockUpdatedDate: today,
+        stockModelVersion: 2,
+        lastAutomaticDeductionDate: today,
+        stockMigratedAt: admin.firestore.FieldValue.serverTimestamp()
+      };
+      tx.update(medicineRef, patch);
+      console.log('MIGRATION STOCK', m.name || medicineRef.id, 'stock:', migratedQuantity);
+      return {...m, ...patch};
+    }
+
+    if (use <= 0) return m; // Occasionnel : aucune déduction automatique.
+
+    const lastDate = typeof m.lastAutomaticDeductionDate === 'string' && /^\\d{4}-\\d{2}-\\d{2}$/.test(m.lastAutomaticDeductionDate)
+      ? m.lastAutomaticDeductionDate
+      : addDays(today,-1);
+    const daysToDeduct = Math.max(0, daysUntil(lastDate, today) ?? 0);
+    if (daysToDeduct <= 0) return m;
+
+    const before = Number(m.quantity)||0;
+    const after = Math.max(0, before - use * daysToDeduct);
+    const patch = {
+      quantity: after,
+      stockBaseQuantity: after,
+      stockUpdatedDate: today,
+      lastAutomaticDeductionDate: today,
+      lastAutomaticDeductionAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+    tx.update(medicineRef, patch);
+    console.log('DÉDUCTION AUTOMATIQUE', m.name || medicineRef.id,
+      `-${use} unité(s)/jour × ${daysToDeduct} jour(s)`, `${before} → ${after}`);
+    return {...m, ...patch};
+  });
+}
+
 function medicineEvents(m,today,nowMinutes) {
   const events = [];
   if (m.reminderOn === true) {
@@ -71,7 +126,6 @@ function medicineEvents(m,today,nowMinutes) {
     for (const time of new Set(times.filter(validTime))) {
       const slot = dueSlot(time,today,nowMinutes,REMINDER_CATCHUP_MINUTES);
       if (!slot) continue;
-      // Respecter les dates de début et de fin, y compris après minuit.
       if (m.reminderStartDate && slot.date < m.reminderStartDate) continue;
       if (m.reminderEndDate && slot.date > m.reminderEndDate) continue;
       events.push({type:'reminder',key:`prise_${slot.date}_${time.replace(':','')}`,
@@ -91,7 +145,7 @@ function stockEventForDevice(m,device,today,nowMinutes) {
   const time = validTime(device.lowStockTime) ? device.lowStockTime : DEFAULT_STOCK_TIME;
   const slot = dueSlot(time,today,nowMinutes,STOCK_CATCHUP_MINUTES);
   if (!slot) return null;
-  const quantity = currentStock(m,slot.date);
+  const quantity = currentStock(m);
   if (quantity > Number(m.threshold ?? 0)) return null;
   return {type:'stock',key:`stock_${slot.date}`,title:'Ma Pharmacie — stock faible',
     body:`Stock faible : ${m.name} (${quantity} restant(s)).`};
@@ -117,7 +171,6 @@ function deviceCanReceiveReminder(device,medicine) {
   if (['Famille','Enzo','Lena'].includes(person)) return true;
   return ['Jérémy','Melissa'].includes(profile) && person === profile;
 }
-
 async function sendNotification(device,medicine,event) {
   const subscription=device.subscription || {endpoint:device.endpoint,keys:device.keys};
   if (!subscription?.endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth) {
@@ -155,15 +208,23 @@ async function main() {
   console.log('MA PHARMACIE — WORKER',today,`${p.hour}:${p.minute}`,TIME_ZONE);
   const [medicineSnap,deviceSnap]=await Promise.all([medicinesRef.get(),devicesRef.get()]);
   console.log('Médicaments trouvés :',medicineSnap.size,'Appareils inscrits :',deviceSnap.size);
-  if (deviceSnap.empty) return;
+
+  // Les déductions sont exécutées même sans appareil enregistré pour les notifications.
   const devices=deviceSnap.docs.map(d=>({id:d.id,...d.data()}));
   const stats={detected:0,sent:0,skipped:0,pushErrors:0,firestoreErrors:0,invalid:0};
   for (const d of medicineSnap.docs) {
-    const medicine={id:d.id,...d.data()};
+    let medicine;
+    try {
+      medicine = await migrateOrDeductDailyStock(d.ref,today);
+    } catch(e) {
+      console.error('Erreur déduction stock',d.id,errorDetails(e));
+      stats.firestoreErrors++;
+      continue;
+    }
+    if (!medicine) continue;
     const common=medicineEvents(medicine,today,nowMinutes);
     for (const device of devices) {
       const stock=stockEventForDevice(medicine,device,today,nowMinutes);
-      // Seuls les rappels de prise personnels sont ciblés. Péremption et stock vont aux deux GSM.
       const eligibleCommon=common.filter(event =>
         event.type !== 'reminder' || deviceCanReceiveReminder(device,medicine)
       );
