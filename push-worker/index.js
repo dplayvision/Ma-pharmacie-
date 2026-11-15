@@ -71,14 +71,17 @@ async function migrateOrDeductDailyStock(medicineRef, today) {
     if (!snap.exists) return null;
     const m = snap.data();
     const use = dailyUse(m);
+    const startDate = typeof m.reminderStartDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(m.reminderStartDate)
+      ? m.reminderStartDate : today;
 
     if (m.stockModelVersion == null || Number(m.stockModelVersion) < 2) {
       let migratedQuantity = Number(m.quantity)||0;
       if (use > 0) {
         const baseQuantity = Number(m.stockBaseQuantity ?? m.quantity)||0;
-        const elapsed = m.stockUpdatedDate
-          ? Math.max(0, -(daysUntil(m.stockUpdatedDate, today) ?? 0))
-          : 0;
+        const dayBeforeStart = addDays(startDate, -1);
+        const elapsedFrom = m.stockUpdatedDate && m.stockUpdatedDate > dayBeforeStart
+          ? m.stockUpdatedDate : dayBeforeStart;
+        const elapsed = today < startDate ? 0 : Math.max(0, -(daysUntil(elapsedFrom, today) ?? 0));
         migratedQuantity = Math.max(0, baseQuantity - elapsed * use);
       }
       const patch = {
@@ -86,7 +89,7 @@ async function migrateOrDeductDailyStock(medicineRef, today) {
         stockBaseQuantity: migratedQuantity,
         stockUpdatedDate: today,
         stockModelVersion: 2,
-        lastAutomaticDeductionDate: today,
+        lastAutomaticDeductionDate: today < startDate ? addDays(startDate, -1) : today,
         stockMigratedAt: admin.firestore.FieldValue.serverTimestamp()
       };
       tx.update(medicineRef, patch);
@@ -95,11 +98,13 @@ async function migrateOrDeductDailyStock(medicineRef, today) {
     }
 
     if (use <= 0) return m; // Occasionnel : aucune déduction automatique.
+    if (today < startDate) return m; // Le traitement n'a pas encore commencé.
 
-    const lastDate = typeof m.lastAutomaticDeductionDate === 'string' && /^\\d{4}-\\d{2}-\\d{2}$/.test(m.lastAutomaticDeductionDate)
+    const lastDate = typeof m.lastAutomaticDeductionDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(m.lastAutomaticDeductionDate)
       ? m.lastAutomaticDeductionDate
-      : addDays(today,-1);
-    const daysToDeduct = Math.max(0, daysUntil(lastDate, today) ?? 0);
+      : addDays(startDate,-1);
+    const effectiveLastDate = lastDate < addDays(startDate,-1) ? addDays(startDate,-1) : lastDate;
+    const daysToDeduct = Math.max(0, -(daysUntil(effectiveLastDate, today) ?? 0));
     if (daysToDeduct <= 0) return m;
 
     const before = Number(m.quantity)||0;
