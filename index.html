@@ -78,7 +78,7 @@ label{font-size:13px;font-weight:650;display:block}.grid{display:grid;grid-templ
 <div><label>Date de début</label><input id="reminderStartDate" type="date"></div><div><label>Date de fin (facultative)</label><input id="reminderEndDate" type="date"></div>
 <div class="full muted">Laissez la date de fin vide pour un rappel quotidien sans date de fin.</div><div class="full"><label>Notes</label><textarea id="notes" rows="2"></textarea></div>
 </div>
-<p class="notice">Respectez toujours l'ordonnance et les conseils du pharmacien. Les quantités du matin, midi et soir servent à estimer la consommation et la date de rupture. Respectez toujours les doses prescrites.</p>
+<p class="notice">Respectez toujours l'ordonnance et les conseils du pharmacien. Les quantités du matin, midi et soir sont déduites automatiquement une fois par jour par le service de synchronisation. Si les trois valeurs sont à zéro, le médicament est suivi manuellement avec le bouton de prise. Respectez toujours les doses prescrites.</p>
 <div class="row"><button type="submit">Enregistrer</button><button type="button" id="cancelEdit" class="secondary">Annuler</button></div>
 </form></section>
 <section id="medDetails" class="card hidden" aria-live="polite"><div class="row between"><h2 id="detailTitle">Fiche médicament</h2><button type="button" id="closeDetails" class="secondary">Fermer</button></div><div id="detailContent"></div></section>
@@ -218,18 +218,18 @@ $("photoCamera").onchange=()=>handlePhotoSelection($("photoCamera").files[0]);
 $("photoGallery").onchange=()=>handlePhotoSelection($("photoGallery").files[0]);
 $("removeSelectedPhoto").onclick=clearSelectedPhoto;
 
-// Stock quotidien et date de rupture.
-// Diazepam est suivi manuellement : aucune déduction quotidienne automatique.
-function isDiazepam(m){return String(m?.name||"").toLowerCase().includes("diazepam");}
-
-// Stock quotidien et date de rupture.
+// Stock quotidien : le worker enregistre les déductions réelles dans Firebase.
 function dailyUse(m){
- if(isDiazepam(m))return 0;
- return(Number(m.doseMorning)||0)+(Number(m.doseNoon)||0)+(Number(m.doseEvening)||0);
+ return (Number(m.doseMorning)||0)+(Number(m.doseNoon)||0)+(Number(m.doseEvening)||0);
 }
+function isOccasional(m){return dailyUse(m)<=0;}
 function todayISO(){const p=dateParts();return`${p.year}-${p.month}-${p.day}`;}
 function elapsedStockDays(start){if(!start)return 0;const[y,mo,d]=start.split("-").map(Number),[cy,cm,cd]=todayISO().split("-").map(Number);return Math.max(0,Math.floor((Date.UTC(cy,cm-1,cd)-Date.UTC(y,mo-1,d))/86400000));}
-function currentStock(m){const base=Number(m.stockBaseQuantity??m.quantity)||0;return Math.max(0,base-elapsedStockDays(m.stockUpdatedDate)*dailyUse(m));}
+function currentStock(m){
+ if(Number(m.stockModelVersion)>=2)return Math.max(0,Number(m.quantity)||0);
+ const base=Number(m.stockBaseQuantity??m.quantity)||0;
+ return Math.max(0,base-elapsedStockDays(m.stockUpdatedDate)*dailyUse(m));
+}
 function depletionInfo(m){const perDay=dailyUse(m),stock=currentStock(m);if(perDay<=0)return null;const days=Math.ceil(stock/perDay),d=new Date();d.setHours(12,0,0,0);d.setDate(d.getDate()+days);const dateISO=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;return{days,date:d.toLocaleDateString("fr-BE"),dateISO};}
 
 // IndexedDB : les photos restent disponibles localement sur chaque appareil.
@@ -393,7 +393,7 @@ $("medForm").onsubmit=async e=>{
    name:$("name").value.trim(),dose:$("dose").value.trim(),form:$("form").value,
    quantity:+$("quantity").value,threshold:+$("threshold").value,
    doseMorning:+$("doseMorning").value||0,doseNoon:+$("doseNoon").value||0,doseEvening:+$("doseEvening").value||0,
-   stockBaseQuantity:+$("quantity").value||0,stockUpdatedDate:todayISO(),expiry:$("expiry").value,
+   stockBaseQuantity:+$("quantity").value||0,stockUpdatedDate:todayISO(),stockModelVersion:2,lastAutomaticDeductionDate:old?.lastAutomaticDeductionDate||"",expiry:$("expiry").value,
    person:$("person").value,place:$("place").value.trim(),barcode:$("barcode").value.trim(),
    photoUrl:old?.photoUrl||"",photoPath:old?.photoPath||"",photoStored:!!(old?.photoStored||old?.photoId),photoId:old?.photoId||"",photoType:old?.photoType||"",photoSize:old?.photoSize||0,
    reminderOn:$("reminderOn").checked,reminderTime:$("reminderTime").value,reminderEveningTime:$("reminderEveningTime").value,
@@ -457,7 +457,7 @@ function googlePharmacyUrl(m){
   const today=new Date();today.setHours(0,0,0,0);
   if(eventDate<today)eventDate.setTime(today.getTime());
  }else{
-  // Pour le Diazepam, pas de date de rupture calculable : proposer demain à 9 h.
+  // Pour un médicament occasionnel, proposer demain à 9 h.
   eventDate=new Date();eventDate.setHours(9,0,0,0);
   if(eventDate<=new Date())eventDate.setDate(eventDate.getDate()+1);
  }
@@ -472,11 +472,12 @@ function openPharmacyCalendar(id){
  if(!url){alert("Renseigne la consommation quotidienne (matin, midi ou soir) pour calculer la date de renouvellement.");return;}
  window.open(url,"_blank");localStorage.setItem("maPharmacieAgendaPharmacie_"+m.id,new Date().toISOString());render();
 }
-async function takeDiazepam(id,button){
+async function takeOccasionalMedication(id,button){
  const m=meds.find(x=>x.id===id);
  if(!m||!user)return;
+ if(!isOccasional(m)){alert("Ce médicament est en déduction automatique. Le bouton manuel est réservé aux médicaments occasionnels.");return;}
  const stock=currentStock(m);
- if(stock<=0){alert("Le stock de Diazepam est épuisé.");return;}
+ if(stock<=0){alert("Le stock de "+(m.name||"ce médicament")+" est épuisé.");return;}
  if(!confirm("Confirmer la prise d'une unité de "+(m.name||"ce médicament")+" ?"))return;
  if(button)button.disabled=true;
  try{
@@ -485,11 +486,13 @@ async function takeDiazepam(id,button){
    quantity:newStock,
    stockBaseQuantity:newStock,
    stockUpdatedDate:todayISO(),
+   stockModelVersion:2,
+   lastAutomaticDeductionDate:todayISO(),
    updatedAt:serverTimestamp(),
    updatedBy:user.email
   },{merge:true});
   // Mettre à jour immédiatement l'écran ; Firestore synchronise les autres téléphones.
-  Object.assign(m,{quantity:newStock,stockBaseQuantity:newStock,stockUpdatedDate:todayISO()});
+  Object.assign(m,{quantity:newStock,stockBaseQuantity:newStock,stockUpdatedDate:todayISO(),stockModelVersion:2,lastAutomaticDeductionDate:todayISO()});
   if(!$("medDetails").classList.contains("hidden"))showMedicationDetails(id);
   else render();
  }catch(e){
@@ -502,9 +505,9 @@ function showMedicationDetails(id){
  const m=meds.find(x=>x.id===id);if(!m){alert("Ce médicament n'a pas été retrouvé.");return;}
  tab("list");const stock=currentStock(m),rupture=depletionInfo(m);
  $("detailTitle").textContent=m.name||"Fiche médicament";
- $("detailContent").innerHTML=`<div class="med" style="align-items:flex-start">${(photoObjectUrls.get(m.id)||m.photoUrl)?`<img src="${esc(photoObjectUrls.get(m.id)||m.photoUrl)}" alt="Boîte de ${esc(m.name)}" style="width:100px;height:100px">`:'<div style="font-size:42px">💊</div>'}<div><b>${esc(m.name)}</b><div class="muted">${esc(m.dose||"Dosage non précisé")} · ${esc(m.form||"")}</div><div class="muted">Pour : ${esc(m.person||"Famille")}</div></div></div><p><b>Stock restant :</b> ${stock}</p><p><b>Consommation :</b> ${isDiazepam(m)?"Prise occasionnelle — déduction manuelle":dailyUse(m)+" unité(s)/jour"}</p>${rupture?`<p><b>Rupture estimée :</b> dans ${rupture.days} jour(s), le ${rupture.date}</p>`:""}${m.expiry?`<p><b>Péremption :</b> ${esc(m.expiry)}</p>`:""}${m.place?`<p><b>Emplacement :</b> ${esc(m.place)}</p>`:""}${m.notes?`<p><b>Notes :</b> ${esc(m.notes)}</p>`:""}<div class="row">${isDiazepam(m)?'<button type="button" id="detailTake">💊 J\'en ai pris (−1)</button>':""}<button type="button" class="secondary" id="detailEdit">Modifier</button></div>`;
+ $("detailContent").innerHTML=`<div class="med" style="align-items:flex-start">${(photoObjectUrls.get(m.id)||m.photoUrl)?`<img src="${esc(photoObjectUrls.get(m.id)||m.photoUrl)}" alt="Boîte de ${esc(m.name)}" style="width:100px;height:100px">`:'<div style="font-size:42px">💊</div>'}<div><b>${esc(m.name)}</b><div class="muted">${esc(m.dose||"Dosage non précisé")} · ${esc(m.form||"")}</div><div class="muted">Pour : ${esc(m.person||"Famille")}</div></div></div><p><b>Stock restant :</b> ${stock}</p><p><b>Consommation :</b> ${isOccasional(m)?"Prise occasionnelle — déduction manuelle":dailyUse(m)+" unité(s)/jour — déduction automatique"}</p>${rupture?`<p><b>Rupture estimée :</b> dans ${rupture.days} jour(s), le ${rupture.date}</p>`:""}${m.expiry?`<p><b>Péremption :</b> ${esc(m.expiry)}</p>`:""}${m.place?`<p><b>Emplacement :</b> ${esc(m.place)}</p>`:""}${m.notes?`<p><b>Notes :</b> ${esc(m.notes)}</p>`:""}<div class="row">${isOccasional(m)?'<button type="button" id="detailTake">💊 J\'en ai pris (−1)</button>':""}<button type="button" class="secondary" id="detailEdit">Modifier</button></div>`;
  $("medDetails").classList.remove("hidden");
- if(isDiazepam(m))$("detailTake").onclick=e=>takeDiazepam(id,e.currentTarget);
+ if(isOccasional(m))$("detailTake").onclick=e=>takeOccasionalMedication(id,e.currentTarget);
  $("detailEdit").onclick=()=>{$("medDetails").classList.add("hidden");edit(id);};
  $("medDetails").scrollIntoView({behavior:"smooth",block:"start"});
  const url=new URL(location.href);url.searchParams.delete("openMed");history.replaceState({},"",url.pathname+url.search+url.hash);
@@ -514,11 +517,11 @@ function openMedicationFromLink(){const id=new URL(location.href).searchParams.g
 function render(){
  const q=$("search").value.toLowerCase(),shown=meds.filter(m=>(m.name+" "+m.dose+" "+m.person+" "+m.barcode).toLowerCase().includes(q));
  $("countAll").textContent=meds.length;$("countLow").textContent=meds.filter(m=>currentStock(m)<=+m.threshold).length;$("countExpiry").textContent=meds.filter(m=>m.expiry&&daysUntil(m.expiry)<=30).length;
- $("medicineList").innerHTML=shown.length?shown.map(m=>`<article class="card med">${(photoObjectUrls.get(m.id)||m.photoUrl)?`<img src="${esc(photoObjectUrls.get(m.id)||m.photoUrl)}" alt="Boîte de ${esc(m.name)}">`:"💊"}<div style="min-width:0;flex:1"><h3>${esc(m.name)}</h3><div class="muted">${esc(m.dose)} · ${esc(m.form)} · ${esc(m.person)}</div><span class="pill">Stock : ${currentStock(m)}</span>${currentStock(m)<=+m.threshold?'<span class="pill warn">Stock faible</span>':""}${m.expiry?`<span class="pill">Péremption : ${esc(m.expiry)}</span>`:""}${depletionInfo(m)?`<div class="muted">Consommation : ${dailyUse(m)} unité(s)/jour · Environ ${depletionInfo(m).days} jour(s) restant(s) · Rupture estimée : ${depletionInfo(m).date}</div>`:""}${m.reminderOn?`<div class="notice" style="margin:9px 0"><b>🔔 Rappel de prise : ${esc(m.reminderTime||"Heure non définie")}${m.reminderFreq==="Matin et soir"?" et "+esc(m.reminderEveningTime||"20:00"):""}</b><div class="muted">Géré par les notifications de Ma Pharmacie.</div></div>`:""}<button type="button" class="calendarBtn" data-pharmacy="${m.id}">📅 Aller chercher à la pharmacie</button><button type="button" data-take="${m.id}" style="margin:5px 0">💊 J'en ai pris (−1)</button><div class="row"><button class="secondary" data-edit="${m.id}">Modifier</button><button class="danger" data-del="${m.id}">Supprimer</button></div></div></article>`).join(""):'<div class="empty">Aucun médicament enregistré.</div>';
+ $("medicineList").innerHTML=shown.length?shown.map(m=>`<article class="card med">${(photoObjectUrls.get(m.id)||m.photoUrl)?`<img src="${esc(photoObjectUrls.get(m.id)||m.photoUrl)}" alt="Boîte de ${esc(m.name)}">`:"💊"}<div style="min-width:0;flex:1"><h3>${esc(m.name)}</h3><div class="muted">${esc(m.dose)} · ${esc(m.form)} · ${esc(m.person)}</div><span class="pill">Stock : ${currentStock(m)}</span>${currentStock(m)<=+m.threshold?'<span class="pill warn">Stock faible</span>':""}${m.expiry?`<span class="pill">Péremption : ${esc(m.expiry)}</span>`:""}${depletionInfo(m)?`<div class="muted">Consommation : ${dailyUse(m)} unité(s)/jour · Environ ${depletionInfo(m).days} jour(s) restant(s) · Rupture estimée : ${depletionInfo(m).date}</div>`:""}${m.reminderOn?`<div class="notice" style="margin:9px 0"><b>🔔 Rappel de prise : ${esc(m.reminderTime||"Heure non définie")}${m.reminderFreq==="Matin et soir"?" et "+esc(m.reminderEveningTime||"20:00"):""}</b><div class="muted">Géré par les notifications de Ma Pharmacie.</div></div>`:""}<button type="button" class="calendarBtn" data-pharmacy="${m.id}">📅 Aller chercher à la pharmacie</button>${isOccasional(m)?`<button type="button" data-take="${m.id}" style="margin:5px 0">💊 J'en ai pris (−1)</button>`:""}<div class="row"><button class="secondary" data-edit="${m.id}">Modifier</button><button class="danger" data-del="${m.id}">Supprimer</button></div></div></article>`).join(""):'<div class="empty">Aucun médicament enregistré.</div>';
  document.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>edit(b.dataset.edit));
  document.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>remove(b.dataset.del));
  document.querySelectorAll("[data-pharmacy]").forEach(b=>b.onclick=()=>openPharmacyCalendar(b.dataset.pharmacy));
- document.querySelectorAll("[data-take]").forEach(b=>b.onclick=()=>takeDiazepam(b.dataset.take,b));
+ document.querySelectorAll("[data-take]").forEach(b=>b.onclick=()=>takeOccasionalMedication(b.dataset.take,b));
  const r=meds;
  $("reminderList").innerHTML=r.length?r.map(m=>{const rupture=depletionInfo(m);return`<div class="card"><b>${esc(m.name)}</b><div class="muted">Pour : <b>${esc(m.person||"Famille")}</b><br>${m.reminderOn?`Prise : ${esc(m.reminderTime||"Non définie")}${m.reminderFreq==="Matin et soir"?" et "+esc(m.reminderEveningTime||"20:00"):""} · notifications de l'application`:"Pas de rappel de prise activé"} · ${currentStock(m)<=+(m.threshold??0)?"Stock faible":"Stock suffisant"}${rupture?`<br>Rupture estimée : ${rupture.date} (dans ${rupture.days} jour(s))`:""}</div><button type="button" class="calendarBtn" data-pharmacy="${m.id}">📅 Aller chercher à la pharmacie</button></div>`;}).join(""):'<div class="empty">Aucun rappel actif.</div>';
 }
